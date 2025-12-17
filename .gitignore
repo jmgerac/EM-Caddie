@@ -1,0 +1,7 @@
+atomai_app/data/graphene_imgstacks_dict.npy
+atomai_app/data/
+__pycache__/**
+**/.conda/**
+**/.ipynb/**
+**/.conda/**
+**.pyc
