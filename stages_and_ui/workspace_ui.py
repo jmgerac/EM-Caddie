@@ -122,9 +122,21 @@ def image_cropper():
     )
     
     # Get cropped dimensions from cropper and sync with inputs
-    use_cropper_result = True
+    # Track the previous cropper dimensions to detect when cropper moves
+    if "prev_cropper_width" not in st.session_state:
+        st.session_state.prev_cropper_width = None
+        st.session_state.prev_cropper_height = None
+    
+    # Check if cropper result changed (user moved the box)
+    cropper_changed = False
     if cropped_img:
         cropped_width, cropped_height = cropped_img.size
+        if (st.session_state.prev_cropper_width != cropped_width or 
+            st.session_state.prev_cropper_height != cropped_height):
+            cropper_changed = True
+            st.session_state.prev_cropper_width = cropped_width
+            st.session_state.prev_cropper_height = cropped_height
+        
         # Only update session state if user hasn't manually set dimensions
         # This allows the cropper to update the inputs, but manual input takes precedence
         if "manual_crop_set" not in st.session_state or not st.session_state.manual_crop_set:
@@ -163,14 +175,21 @@ def image_cropper():
         if st.session_state.get("manual_crop_set", False):
             if st.button("🔄 Use Cropper Selection", use_container_width=True, key="reset_manual_crop"):
                 st.session_state.manual_crop_set = False
+                st.session_state.prev_cropper_width = None
+                st.session_state.prev_cropper_height = None
                 st.rerun()
     
-    # Check if dimensions were manually changed from cropper
+    # Check if dimensions were manually changed via number inputs
+    # Only treat as manual change if user actually interacted with inputs AND cropper didn't just change
     dimensions_changed = (input_width != st.session_state.crop_width or 
                          input_height != st.session_state.crop_height)
     
-    # If dimensions were manually changed via inputs, crop from bottom-right corner
-    if dimensions_changed:
+    # Prioritize cropper result if cropper changed and manual mode is not set
+    if cropper_changed and ("manual_crop_set" not in st.session_state or not st.session_state.manual_crop_set):
+        # Use the cropper result - cropped_img is already set from st_cropper
+        pass  # cropped_img is already the correct value from st_cropper
+    elif dimensions_changed and not cropper_changed:
+        # User manually changed dimensions via number inputs
         st.session_state.crop_width = input_width
         st.session_state.crop_height = input_height
         st.session_state.manual_crop_set = True
@@ -190,18 +209,16 @@ def image_cropper():
         # Create cropped image from specified dimensions
         cropped_img = pil_img.crop((left, top, right, bottom))
         st.info(f"✅ Cropped from bottom-right corner: ({left}, {top}) to ({right}, {bottom})")
-        use_cropper_result = False
     elif cropped_img and ("manual_crop_set" not in st.session_state or not st.session_state.manual_crop_set):
         # Use the cropper result if no manual input was set
-        use_cropper_result = True
-    else:
+        pass  # cropped_img is already the correct value from st_cropper
+    elif st.session_state.get("manual_crop_set", False):
         # Use manual dimensions if they were previously set
         left = max(0, original_width - st.session_state.crop_width)
         top = max(0, original_height - st.session_state.crop_height)
         right = min(left + st.session_state.crop_width, original_width)
         bottom = min(top + st.session_state.crop_height, original_height)
         cropped_img = pil_img.crop((left, top, right, bottom))
-        use_cropper_result = False
     
     # Display the cropped image
     if cropped_img:
@@ -350,6 +367,11 @@ def workspace(tools, tool_names, tool_embs, encoder):
     # -----------------------------
     # Sidebar: manual tool select + history
     # -----------------------------
+    # Add button to go to line profile tool
+    if st.sidebar.button("📊 Open Line Profile & Shape Analysis Tool", use_container_width=True, type="secondary"):
+        st.session_state.stage = 5
+        st.rerun()
+    
     selected_tool = st.sidebar.selectbox(
         "Pick a tool manually:",
         [""] + tool_names,
@@ -668,10 +690,4 @@ def workspace(tools, tool_names, tool_embs, encoder):
             file_name="processed.png",
             mime="image/png",
         )
-        
-        # Add button to go to line profile tool
-        st.markdown("---")
-        if st.button("📊 Open Line Profile & Shape Analysis Tool", use_container_width=True, type="secondary"):
-            st.session_state.stage = 5
-            st.rerun()
 
