@@ -11,11 +11,19 @@ from streamlit.elements import image as st_image
 import tools.line_profile_tool as lpt
 
 
-def _extract_points_from_object(obj):
+def _extract_points_from_canvas(json_data):
     """
-    Extracts points from a single canvas object.
-    Supports line, free-draw (path), circle, and rectangle objects.
+    Extracts a list of (x, y) points from the last drawn object on the canvas.
+    Supports line and free-draw (path) objects from streamlit-drawable-canvas.
     """
+    if not json_data or "objects" not in json_data:
+        return []
+
+    objects = json_data.get("objects") or []
+    if not objects:
+        return []
+
+    obj = objects[-1]  # use the most recent stroke
     obj_type = obj.get("type")
 
     # Direct line object
@@ -25,112 +33,19 @@ def _extract_points_from_object(obj):
             (obj.get("x2", 0), obj.get("y2", 0)),
         ]
 
-    # Circle object - extract perimeter points
-    elif obj_type == "circle":
-        # Canvas circle objects have left, top, radius, width, height
-        # Center is at (left + width/2, top + height/2) or (left + radius, top + radius)
-        left = obj.get("left", 0)
-        top = obj.get("top", 0)
-        radius = obj.get("radius", 0)
-        # If radius not available, calculate from width/height
-        if radius == 0:
-            width = obj.get("width", 0)
-            height = obj.get("height", 0)
-            radius = min(width, height) / 2
-            center_x = left + width / 2
-            center_y = top + height / 2
-        else:
-            center_x = left + radius
-            center_y = top + radius
-        
-        # Generate points around the circle perimeter
-        num_points = max(32, int(2 * np.pi * radius))
-        num_points = min(num_points, 360)
-        angles = np.linspace(0, 2 * np.pi, num_points, endpoint=False)
-        points = []
-        for angle in angles:
-            x = center_x + radius * np.cos(angle)
-            y = center_y + radius * np.sin(angle)
-            points.append((x, y))
-        return points
-
-    # Rectangle object - extract perimeter points
-    elif obj_type == "rect":
-        left = obj.get("left", 0)
-        top = obj.get("top", 0)
-        width = obj.get("width", 0)
-        height = obj.get("height", 0)
-        
-        # Generate points along the rectangle perimeter
-        points = []
-        # Top edge
-        num_top = max(10, int(width))
-        for x in np.linspace(left, left + width, num_top):
-            points.append((x, top))
-        # Right edge
-        num_right = max(10, int(height))
-        for y in np.linspace(top, top + height, num_right):
-            points.append((left + width, y))
-        # Bottom edge (reverse)
-        num_bottom = max(10, int(width))
-        for x in np.linspace(left + width, left, num_bottom):
-            points.append((x, top + height))
-        # Left edge (reverse)
-        num_left = max(10, int(height))
-        for y in np.linspace(top + height, top, num_left):
-            points.append((left, y))
-        return points
-
     # Free draw path
-    elif obj_type == "path" or "path" in obj:
-        path = obj.get("path")
-        if path:
-            pts = []
-            for cmd in path:
-                if len(cmd) >= 3 and cmd[0] in ("M", "L"):
-                    pts.append((cmd[1], cmd[2]))
-            return pts
+    path = obj.get("path")
+    if path:
+        pts = []
+        for cmd in path:
+            if len(cmd) >= 3 and cmd[0] in ("M", "L"):
+                pts.append((cmd[1], cmd[2]))
+        return pts
 
     return []
 
 
-def _extract_all_objects_from_canvas(json_data):
-    """
-    Extracts all objects from canvas with their colors and points.
-    Returns a list of dicts with 'points', 'color', 'type', and 'index'.
-    """
-    if not json_data or "objects" not in json_data:
-        return []
-
-    objects = json_data.get("objects") or []
-    if not objects:
-        return []
-
-    extracted = []
-    colors = ["#00ff00", "#ff0000", "#0000ff", "#ffff00", "#ff00ff", "#00ffff", "#ff8800", "#8800ff"]
-    
-    for idx, obj in enumerate(objects):
-        points = _extract_points_from_object(obj)
-        if points:
-            color = obj.get("stroke", colors[idx % len(colors)])
-            extracted.append({
-                'points': points,
-                'color': color,
-                'type': obj.get("type", "unknown"),
-                'index': idx
-            })
-    
-    return extracted
-
-
-def _convert_to_units(distances_px, pixels_per_unit=1.0):
-    """Convert pixel distances to units."""
-    if pixels_per_unit == 1.0:
-        return distances_px, "pixels"
-    return distances_px / pixels_per_unit, st.session_state.get("scale_units", "units")
-
-
-def _build_profile_csv(points, distances, intensities, sample_coords, pixels_per_unit=1.0, units="pixels"):
+def _build_profile_csv(points, distances, intensities, sample_coords):
     """Create a CSV (as bytes) containing vertices, sampled coordinates, and intensities."""
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -140,11 +55,9 @@ def _build_profile_csv(points, distances, intensities, sample_coords, pixels_per
         writer.writerow([idx, x, y])
 
     writer.writerow([])  # spacer
-    distances_units, units_label = _convert_to_units(distances, pixels_per_unit)
-    writer.writerow(["sample_index", f"distance_{units_label}", "distance_px", "intensity", "sample_x", "sample_y"])
-    for idx, (dist_px, inten, coord) in enumerate(zip(distances, intensities, sample_coords)):
-        dist_units = distances_units[idx] if idx < len(distances_units) else dist_px / pixels_per_unit
-        writer.writerow([idx, f"{dist_units:.3f}", f"{dist_px:.3f}", inten, coord[0], coord[1]])
+    writer.writerow(["sample_index", "distance_px", "intensity", "sample_x", "sample_y"])
+    for idx, (dist, inten, coord) in enumerate(zip(distances, intensities, sample_coords)):
+        writer.writerow([idx, f"{dist:.3f}", inten, coord[0], coord[1]])
 
     return buffer.getvalue().encode("utf-8")
 
@@ -203,19 +116,19 @@ def line_profile_stage():
     """
     Interactive line profile analysis stage.
     """
-    st.markdown("<h2 style='text-align:center;'>Image Analysis Workshop</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;'>Line Profile & Shape Analysis Tool</h2>", unsafe_allow_html=True)
     
     img = st.session_state.get("working_img")
     if img is None:
         st.error("No image loaded. Please go back and upload an image.")
-        if st.button("Return to Image Processing"):
+        if st.button("Back to Workspace"):
             st.session_state.stage = 4
             st.rerun()
         return
     
-    # Initialize session state for line profile - default to "freedraw" (Free Draw section)
+    # Initialize session state for line profile
     if "line_profile_mode" not in st.session_state:
-        st.session_state.line_profile_mode = "freedraw"  # "freedraw", "line", or "shape"
+        st.session_state.line_profile_mode = "line"  # "line", "shape", or "canvas"
     
     if "line_p1" not in st.session_state:
         st.session_state.line_p1 = None
@@ -289,88 +202,22 @@ def line_profile_stage():
     
     # Sidebar controls
     with st.sidebar:
-        if st.button("← Return to Image Processing", use_container_width=True):
+        if st.button("← Back to Workspace", use_container_width=True):
             st.session_state.stage = 4
             st.rerun()
         
         st.markdown("### Mode Selection")
         mode = st.radio(
             "Analysis Mode:",
-            ["Draw", "Line Profile", "Shape Profile"],
-            index={"freedraw": 0, "line": 1, "shape": 2}.get(st.session_state.line_profile_mode, 0),
+            ["Line Profile", "Shape Profile", "Canvas Draw"],
+            index={"line": 0, "shape": 1, "canvas": 2}.get(st.session_state.line_profile_mode, 0),
             key="profile_mode_radio"
         )
         st.session_state.line_profile_mode = (
-            "freedraw" if mode == "Draw" else "line" if mode == "Line Profile" else "shape"
+            "line" if mode == "Line Profile" else "shape" if mode == "Shape Profile" else "canvas"
         )
         
         st.markdown("---")
-        
-        # Scale/Units input section
-        st.markdown("### Scale & Units")
-        use_scale = st.checkbox("Use scale conversion", value=st.session_state.get("use_scale", False), key="use_scale_checkbox")
-        
-        if use_scale:
-            scale_length = st.number_input(
-                "Image Length:",
-                min_value=0.0,
-                value=float(st.session_state.get("scale_length", 1.0)),
-                step=0.1,
-                key="scale_length_input",
-                help="Total length of the image in the specified units"
-            )
-            st.session_state.scale_length = scale_length
-            
-            scale_units = st.text_input(
-                "Units:",
-                value=st.session_state.get("scale_units", "nm"),
-                key="scale_units_input",
-                help="Unit of measurement (e.g., nm, μm, mm)"
-            )
-            st.session_state.scale_units = scale_units
-            
-            # Calculate pixels per unit
-            if scale_length > 0:
-                pixels_per_unit = max(width, height) / scale_length
-                st.session_state.pixels_per_unit = pixels_per_unit
-                st.caption(f"Scale: {pixels_per_unit:.2f} pixels per {scale_units}")
-            else:
-                st.session_state.pixels_per_unit = 1.0
-        else:
-            st.session_state.pixels_per_unit = 1.0
-            st.session_state.scale_units = "pixels"
-        
-        st.markdown("---")
-        
-        # Canvas controls for Draw mode
-        if st.session_state.line_profile_mode == "freedraw":
-            st.markdown("### Canvas Controls")
-            draw_type = st.selectbox(
-                "Draw Type:",
-                ["line", "freedraw", "circle", "rectangle"],
-                index=0,
-                key="canvas_draw_type",
-                help="Select what to draw: line (2 points), freehand, or shapes (click-drag to resize)"
-            )
-            
-            # Map draw type to canvas drawing mode
-            # The selectbox already stores the value in st.session_state.canvas_draw_type
-            if draw_type in ["line", "freedraw"]:
-                canvas_draw_mode = draw_type
-            elif draw_type == "circle":
-                canvas_draw_mode = "circle"
-            elif draw_type == "rectangle":
-                canvas_draw_mode = "rect"
-            else:
-                canvas_draw_mode = "line"
-            
-            # Store the canvas drawing mode in session state
-            st.session_state.canvas_draw_mode = canvas_draw_mode
-            
-            st.color_picker("Stroke color", value="#00ff00", key="canvas_stroke_color")
-            st.slider("Stroke width", 1, 15, value=1, key="canvas_stroke_width")
-            st.caption("💡 Tip: The most recent stroke is used for the profile calculation.")
-            st.markdown("---")
         
         if st.session_state.line_profile_mode == "line":
             st.markdown("### Line Controls")
@@ -496,7 +343,7 @@ def line_profile_stage():
                 else:
                     st.info("Use the sliders above or enable manual coordinates to define a line. The intensity profile updates automatically.")
         
-        elif st.session_state.line_profile_mode == "shape":  # Only show shape controls in shape mode
+        else:  # Shape mode
             st.markdown("### Shape Controls")
             
             shape_type = st.selectbox(
@@ -589,497 +436,6 @@ def line_profile_stage():
             st.markdown("**Click Instructions:**")
             st.info("Use the sliders above or manual coordinates to position the shape. The intensity profile along the perimeter updates automatically.")
     
-    # ============================================================
-    # DRAW SECTION (Default - shown first)
-    # ============================================================
-    if st.session_state.line_profile_mode == "freedraw":
-        st.markdown("## Draw")
-        st.caption("Draw multiple lines, shapes, or freehand strokes on the image. Each drawing gets its own color and separate intensity profile. Use the dropdown to select draw type, then click-drag to create shapes.")
-        
-        # Get canvas control values from session state (set by sidebar widgets)
-        draw_type = st.session_state.get("canvas_draw_type", "line")
-        draw_mode = st.session_state.get("canvas_draw_mode", "line")
-        stroke_color = st.session_state.get("canvas_stroke_color", "#00ff00")
-        stroke_width = st.session_state.get("canvas_stroke_width", 3)
-        
-        # Main canvas area
-        col_canvas, col_plot = st.columns([2, 1])
-        
-        with col_canvas:
-            st.markdown("### Drawing Canvas")
-            
-            # Ensure PIL image is in the correct format
-            if pil_bg.mode != 'RGB':
-                pil_bg = pil_bg.convert('RGB')
-            
-            # Map draw type to canvas drawing mode
-            # Note: streamlit-drawable-canvas supports: "freedraw", "line", "rect", "circle", "transform"
-            # For triangle, we'll use transform mode or handle it as a custom shape
-            if draw_type in ["line", "freedraw"]:
-                canvas_drawing_mode = draw_type
-            elif draw_type == "circle":
-                canvas_drawing_mode = "circle"
-            elif draw_type == "rectangle":
-                canvas_drawing_mode = "rect"
-            else:
-                canvas_drawing_mode = "line"
-            
-            canvas_result = st_canvas(
-                fill_color="rgba(0, 0, 0, 0)",
-                stroke_width=stroke_width,
-                stroke_color=stroke_color,
-                background_image=pil_bg,
-                update_streamlit=True,
-                height=canvas_height,
-                width=canvas_width,
-                drawing_mode=canvas_drawing_mode,
-                key="line_profile_draw_canvas",
-            )
-            
-            # Extract all objects from canvas
-            all_objects = _extract_all_objects_from_canvas(canvas_result.json_data if canvas_result else None)
-            
-            # Convert canvas coordinates back to original image coordinates if image was resized
-            scale_x = width / canvas_width if canvas_width != width else 1.0
-            scale_y = height / canvas_height if canvas_height != height else 1.0
-            
-            # Process each object
-            processed_objects = []
-            pixels_per_unit = st.session_state.get("pixels_per_unit", 1.0)
-            
-            for obj_data in all_objects:
-                points = obj_data['points']
-                if len(points) >= 2:
-                    # Scale coordinates if needed
-                    if scale_x != 1.0 or scale_y != 1.0:
-                        points = [(p[0] * scale_x, p[1] * scale_y) for p in points]
-                    
-                    distances, intensities, sample_coords = lpt.get_polyline_profile(img, points)
-                    if len(distances) > 0:
-                        # Initialize name if not exists
-                        profile_name_key = f"profile_name_{obj_data['index']}"
-                        default_name = f"Profile {obj_data['index'] + 1}"
-                        if profile_name_key not in st.session_state:
-                            st.session_state[profile_name_key] = default_name
-                        
-                        processed_objects.append({
-                            'points': points,
-                            'distances': distances,
-                            'intensities': intensities,
-                            'sample_coords': sample_coords,
-                            'color': obj_data['color'],
-                            'index': obj_data['index'],
-                            'type': obj_data['type'],
-                            'name': st.session_state[profile_name_key]
-                        })
-        
-        with col_plot:
-            st.markdown("### Intensity Profiles")
-            pixels_per_unit = st.session_state.get("pixels_per_unit", 1.0)
-            units_label = st.session_state.get("scale_units", "pixels")
-            
-            if processed_objects:
-                # Combined plot with all profiles (moved before name entry boxes)
-                combined_fig = go.Figure()
-                
-                for obj in processed_objects:
-                    distances_units, _ = _convert_to_units(obj['distances'], pixels_per_unit)
-                    combined_fig.add_trace(go.Scatter(
-                        x=distances_units,
-                        y=obj['intensities'],
-                        mode='lines',
-                        line=dict(color=obj['color'], width=2),
-                        name=obj['name'],
-                        legendgroup=f"group_{obj['index']}"
-                    ))
-                
-                xaxis_title = f"Distance along path ({units_label})" if pixels_per_unit != 1.0 else "Distance along path (pixels)"
-                combined_fig.update_layout(
-                    title="All Intensity Profiles",
-                    xaxis_title=xaxis_title,
-                    yaxis_title="Intensity",
-                    height=400,
-                    showlegend=True
-                )
-                st.plotly_chart(combined_fig, use_container_width=True)
-                
-                st.markdown("---")
-                
-                # Name entry boxes for each profile (moved after combined plot)
-                st.markdown("**Profile Names:**")
-                for obj in processed_objects:
-                    profile_name_key = f"profile_name_{obj['index']}"
-                    default_name = f"Profile {obj['index'] + 1}"
-                    # Initialize name in session state if not exists
-                    if profile_name_key not in st.session_state:
-                        st.session_state[profile_name_key] = default_name
-                    
-                    current_name = st.session_state[profile_name_key]
-                    new_name = st.text_input(
-                        f"Name for {obj['type']} {obj['index'] + 1}:",
-                        value=current_name,
-                        key=f"name_input_{obj['index']}",
-                        label_visibility="visible"
-                    )
-                    st.session_state[profile_name_key] = new_name
-                    # Update the name in processed_objects
-                    obj['name'] = new_name
-                
-                # Combined CSV Download
-                st.markdown("---")
-                st.markdown("**Download Combined Data:**")
-                # Create combined CSV with all profiles
-                combined_csv_buffer = io.StringIO()
-                combined_csv_writer = csv.writer(combined_csv_buffer)
-                
-                combined_csv_writer.writerow(["Profile Name", "Profile Index", "Profile Type"])
-                for obj in processed_objects:
-                    combined_csv_writer.writerow([obj['name'], obj['index'], obj['type']])
-                
-                combined_csv_writer.writerow([])  # spacer
-                
-                # Write all profile data
-                for obj in processed_objects:
-                    combined_csv_writer.writerow([f"=== {obj['name']} ==="])
-                    combined_csv_writer.writerow(["vertex_index", "vertex_x", "vertex_y"])
-                    for idx, (x, y) in enumerate(obj['points']):
-                        combined_csv_writer.writerow([idx, x, y])
-                    
-                    combined_csv_writer.writerow([])
-                    distances_units, _ = _convert_to_units(obj['distances'], pixels_per_unit)
-                    combined_csv_writer.writerow(["sample_index", f"distance_{units_label}", "distance_px", "intensity", "sample_x", "sample_y"])
-                    for idx, (dist_px, inten, coord) in enumerate(zip(obj['distances'], obj['intensities'], obj['sample_coords'])):
-                        dist_units = distances_units[idx] if idx < len(distances_units) else dist_px / pixels_per_unit
-                        combined_csv_writer.writerow([idx, f"{dist_units:.3f}", f"{dist_px:.3f}", inten, coord[0], coord[1]])
-                    combined_csv_writer.writerow([])  # spacer between profiles
-                
-                combined_csv_bytes = combined_csv_buffer.getvalue().encode("utf-8")
-                st.download_button(
-                    "📥 Download Combined CSV (All Profiles)",
-                    data=combined_csv_bytes,
-                    file_name="all_intensity_profiles.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                    help="Download all profiles in a single CSV file"
-                )
-                
-                # Individual profiles with downloads (in expander, shown in sidebar area)
-                # Initialize show_individual variable
-                show_individual = st.session_state.get("show_individual_plots", False)
-                if show_individual:
-                    st.markdown("---")
-                    st.markdown("### Individual Profile Details")
-                    for obj in processed_objects:
-                        with st.expander(f"{obj['name']} ({obj['type']})", expanded=False):
-                            pixels_per_unit = st.session_state.get("pixels_per_unit", 1.0)
-                            units_label = st.session_state.get("scale_units", "pixels")
-                            
-                            # Check if this is a circle
-                            is_circle = obj['type'] == 'circle'
-                            
-                            if is_circle:
-                                # For circles, convert to π units
-                                # Calculate total perimeter length
-                                total_perimeter = obj['distances'][-1] if len(obj['distances']) > 0 else 0
-                                if total_perimeter > 0:
-                                    # Convert distances to π units (0 to 2π)
-                                    distances_pi = (obj['distances'] / total_perimeter) * 2 * np.pi
-                                    
-                                    profile_fig = go.Figure()
-                                    profile_fig.add_trace(go.Scatter(
-                                        x=distances_pi,
-                                        y=obj['intensities'],
-                                        mode='lines',
-                                        line=dict(color=obj['color'], width=2),
-                                        name='Intensity'
-                                    ))
-                                    
-                                    # Create secondary x-axis with pixel/unit conversion
-                                    distances_units, _ = _convert_to_units(obj['distances'], pixels_per_unit)
-                                    
-                                    profile_fig.update_layout(
-                                        title=obj['name'],
-                                        xaxis_title="Angle (π radians)",
-                                        yaxis_title="Intensity",
-                                        height=300,
-                                        showlegend=False,
-                                        xaxis=dict(
-                                            tickmode='linear',
-                                            tick0=0,
-                                            dtick=np.pi/2,
-                                            tickformat='.2f',
-                                            ticktext=['0', 'π/2', 'π', '3π/2', '2π'],
-                                            tickvals=[0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi]
-                                        )
-                                    )
-                                    
-                                    # Add secondary axis annotation showing pixel/unit values
-                                    st.plotly_chart(profile_fig, use_container_width=True)
-                                    
-                                    # Show conversion table
-                                    with st.expander("Angle to Distance Conversion", expanded=False):
-                                        st.markdown(f"**Total Perimeter:** {total_perimeter:.2f} pixels")
-                                        if pixels_per_unit != 1.0:
-                                            perimeter_units = total_perimeter / pixels_per_unit
-                                            st.markdown(f"**Total Perimeter:** {perimeter_units:.2f} {units_label}")
-                                        st.markdown("**Key Angles:**")
-                                        key_angles = [0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi]
-                                        for angle in key_angles:
-                                            fraction = angle / (2 * np.pi)
-                                            dist_px = total_perimeter * fraction
-                                            dist_units, _ = _convert_to_units(np.array([dist_px]), pixels_per_unit)
-                                            angle_label = ['0', 'π/2', 'π', '3π/2', '2π'][int(angle / (np.pi/2))]
-                                            st.markdown(f"- {angle_label}: {dist_px:.2f} px" + 
-                                                       (f" ({dist_units[0]:.2f} {units_label})" if pixels_per_unit != 1.0 else ""))
-                                else:
-                                    # Fallback for zero-length circle
-                                    distances_units, _ = _convert_to_units(obj['distances'], pixels_per_unit)
-                                    profile_fig = go.Figure()
-                                    profile_fig.add_trace(go.Scatter(
-                                        x=distances_units,
-                                        y=obj['intensities'],
-                                        mode='lines',
-                                        line=dict(color=obj['color'], width=2),
-                                        name='Intensity'
-                                    ))
-                                    xaxis_title = f"Distance ({units_label})" if pixels_per_unit != 1.0 else "Distance (pixels)"
-                                    profile_fig.update_layout(
-                                        title=obj['name'],
-                                        xaxis_title=xaxis_title,
-                                        yaxis_title="Intensity",
-                                        height=300,
-                                        showlegend=False
-                                    )
-                                    st.plotly_chart(profile_fig, use_container_width=True)
-                            else:
-                                # For non-circles, use standard distance units
-                                distances_units, _ = _convert_to_units(obj['distances'], pixels_per_unit)
-                                
-                                profile_fig = go.Figure()
-                                profile_fig.add_trace(go.Scatter(
-                                    x=distances_units,
-                                    y=obj['intensities'],
-                                    mode='lines',
-                                    line=dict(color=obj['color'], width=2),
-                                    name='Intensity'
-                                ))
-                                xaxis_title = f"Distance ({units_label})" if pixels_per_unit != 1.0 else "Distance (pixels)"
-                                profile_fig.update_layout(
-                                    title=obj['name'],
-                                    xaxis_title=xaxis_title,
-                                    yaxis_title="Intensity",
-                                    height=300,
-                                    showlegend=False
-                                )
-                                st.plotly_chart(profile_fig, use_container_width=True)
-                        
-                        # Statistics
-                        col_stat1, col_stat2 = st.columns(2)
-                        with col_stat1:
-                            st.metric("Mean", f"{np.mean(obj['intensities']):.2f}")
-                            st.metric("Max", f"{np.max(obj['intensities']):.2f}")
-                        with col_stat2:
-                            st.metric("Min", f"{np.min(obj['intensities']):.2f}")
-                            st.metric("Std Dev", f"{np.std(obj['intensities']):.2f}")
-                        
-                        # CSV Download
-                        csv_bytes = _build_profile_csv(
-                            obj['points'], obj['distances'], obj['intensities'], 
-                            obj['sample_coords'], pixels_per_unit, units_label
-                        )
-                        st.download_button(
-                            f"📥 Download CSV - {obj['name']}",
-                            data=csv_bytes,
-                            file_name=f"{obj['name'].replace(' ', '_')}.csv",
-                            mime="text/csv",
-                            use_container_width=True,
-                            key=f"download_csv_{obj['index']}"
-                        )
-            else:
-                st.info("Draw lines, shapes, or freehand strokes on the canvas to see intensity profiles here.")
-        
-        # Show combined intensity plot below canvas in full width
-        if processed_objects:
-            st.markdown("---")
-            
-            # Checkbox to show individual plots (moved above full-width plot)
-            show_individual = st.checkbox(
-                "📊 Show Individual Plots",
-                value=st.session_state.get("show_individual_plots", False),
-                key="show_individual_plots_checkbox"
-            )
-            st.session_state.show_individual_plots = show_individual
-            
-            st.markdown("### Combined Intensity Profile (Full Width)")
-            pixels_per_unit = st.session_state.get("pixels_per_unit", 1.0)
-            units_label = st.session_state.get("scale_units", "pixels")
-            
-            full_profile_fig = go.Figure()
-            has_circles = any(obj['type'] == 'circle' for obj in processed_objects)
-            all_circles = all(obj['type'] == 'circle' for obj in processed_objects)
-            
-            for obj in processed_objects:
-                is_circle = obj['type'] == 'circle'
-                
-                if is_circle and all_circles:
-                    # For circles-only plots, use π units
-                    total_perimeter = obj['distances'][-1] if len(obj['distances']) > 0 else 0
-                    if total_perimeter > 0:
-                        distances_pi = (obj['distances'] / total_perimeter) * 2 * np.pi
-                        x_data = distances_pi
-                        xaxis_title = "Angle (π radians)"
-                    else:
-                        distances_units, _ = _convert_to_units(obj['distances'], pixels_per_unit)
-                        x_data = distances_units
-                        xaxis_title = f"Distance ({units_label})" if pixels_per_unit != 1.0 else "Distance (pixels)"
-                else:
-                    # For non-circles or mixed plots, use distance units
-                    distances_units, _ = _convert_to_units(obj['distances'], pixels_per_unit)
-                    x_data = distances_units
-                    xaxis_title = f"Distance along path ({units_label})" if pixels_per_unit != 1.0 else "Distance along path (pixels)"
-                
-                # Convert hex color to rgba for fill
-                hex_color = obj['color'].lstrip('#')
-                rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-                full_profile_fig.add_trace(go.Scatter(
-                    x=x_data,
-                    y=obj['intensities'],
-                    mode='lines',
-                    line=dict(color=obj['color'], width=2),
-                    name=obj['name'],
-                    fill='tozeroy' if obj['index'] == 0 else None,
-                    fillcolor=f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.1)" if obj['index'] == 0 else None
-                ))
-            
-            # Set x-axis formatting for circles-only plots
-            if all_circles:
-                full_profile_fig.update_layout(
-                    title="All Intensity Profiles",
-                    xaxis_title="Angle (π radians)",
-                    yaxis_title="Intensity",
-                    height=500,
-                    showlegend=True,
-                    hovermode='x unified',
-                    xaxis=dict(
-                        tickmode='linear',
-                        tick0=0,
-                        dtick=np.pi/2,
-                        tickformat='.2f',
-                        ticktext=['0', 'π/2', 'π', '3π/2', '2π'],
-                        tickvals=[0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi]
-                    )
-                )
-            else:
-                full_profile_fig.update_layout(
-                    title="All Intensity Profiles",
-                    xaxis_title=xaxis_title,
-                    yaxis_title="Intensity",
-                    height=500,
-                    showlegend=True,
-                    hovermode='x unified'
-                )
-            st.plotly_chart(full_profile_fig, use_container_width=True)
-            
-            # Show individual plots below if checkbox is checked
-            if show_individual:
-                st.markdown("---")
-                st.markdown("### Individual Profile Plots")
-                for obj in processed_objects:
-                    st.markdown(f"#### {obj['name']}")
-                    pixels_per_unit = st.session_state.get("pixels_per_unit", 1.0)
-                    units_label = st.session_state.get("scale_units", "pixels")
-                    
-                    # Check if this is a circle
-                    is_circle = obj['type'] == 'circle'
-                    
-                    if is_circle:
-                        # For circles, convert to π units
-                        total_perimeter = obj['distances'][-1] if len(obj['distances']) > 0 else 0
-                        if total_perimeter > 0:
-                            distances_pi = (obj['distances'] / total_perimeter) * 2 * np.pi
-                            
-                            profile_fig = go.Figure()
-                            profile_fig.add_trace(go.Scatter(
-                                x=distances_pi,
-                                y=obj['intensities'],
-                                mode='lines',
-                                line=dict(color=obj['color'], width=2),
-                                name='Intensity'
-                            ))
-                            
-                            profile_fig.update_layout(
-                                title=obj['name'],
-                                xaxis_title="Angle (π radians)",
-                                yaxis_title="Intensity",
-                                height=400,
-                                showlegend=False,
-                                xaxis=dict(
-                                    tickmode='linear',
-                                    tick0=0,
-                                    dtick=np.pi/2,
-                                    tickformat='.2f',
-                                    ticktext=['0', 'π/2', 'π', '3π/2', '2π'],
-                                    tickvals=[0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi]
-                                )
-                            )
-                            st.plotly_chart(profile_fig, use_container_width=True)
-                        else:
-                            distances_units, _ = _convert_to_units(obj['distances'], pixels_per_unit)
-                            profile_fig = go.Figure()
-                            profile_fig.add_trace(go.Scatter(
-                                x=distances_units,
-                                y=obj['intensities'],
-                                mode='lines',
-                                line=dict(color=obj['color'], width=2),
-                                name='Intensity'
-                            ))
-                            xaxis_title = f"Distance ({units_label})" if pixels_per_unit != 1.0 else "Distance (pixels)"
-                            profile_fig.update_layout(
-                                title=obj['name'],
-                                xaxis_title=xaxis_title,
-                                yaxis_title="Intensity",
-                                height=400,
-                                showlegend=False
-                            )
-                            st.plotly_chart(profile_fig, use_container_width=True)
-                    else:
-                        # For non-circles, use standard distance units
-                        distances_units, _ = _convert_to_units(obj['distances'], pixels_per_unit)
-                        
-                        profile_fig = go.Figure()
-                        profile_fig.add_trace(go.Scatter(
-                            x=distances_units,
-                            y=obj['intensities'],
-                            mode='lines',
-                            line=dict(color=obj['color'], width=2),
-                            name='Intensity'
-                        ))
-                        xaxis_title = f"Distance ({units_label})" if pixels_per_unit != 1.0 else "Distance (pixels)"
-                        profile_fig.update_layout(
-                            title=obj['name'],
-                            xaxis_title=xaxis_title,
-                            yaxis_title="Intensity",
-                            height=400,
-                            showlegend=False
-                        )
-                        st.plotly_chart(profile_fig, use_container_width=True)
-                    
-                    st.markdown("---")
-    
-    # ============================================================
-    # LINE PROFILE SECTION
-    # ============================================================
-    elif st.session_state.line_profile_mode == "line":
-        st.markdown("## Line Profile")
-        st.caption("Use sliders or manual coordinates to define a line and analyze its intensity profile.")
-    
-    # ============================================================
-    # SHAPE PROFILE SECTION
-    # ============================================================
-    elif st.session_state.line_profile_mode == "shape":
-        st.markdown("## Shape Profile")
-        st.caption("Analyze intensity profiles along geometric shape perimeters.")
-    
     # Main area: Image with interactive plotly (line/shape modes only)
     if st.session_state.line_profile_mode in ("line", "shape"):
         col1, col2 = st.columns([2, 1])
@@ -1165,32 +521,18 @@ def line_profile_stage():
                     st.session_state.line_p2
                 )
                 
-                # Generate sample coordinates for CSV
-                p1 = st.session_state.line_p1
-                p2 = st.session_state.line_p2
-                num_samples = len(distances)
-                x_coords = np.linspace(p1[0], p2[0], num_samples, endpoint=True)
-                y_coords = np.linspace(p1[1], p2[1], num_samples, endpoint=True)
-                sample_coords = np.array([(int(round(x)), int(round(y))) for x, y in zip(x_coords, y_coords)])
-                
-                # Convert to units
-                pixels_per_unit = st.session_state.get("pixels_per_unit", 1.0)
-                units_label = st.session_state.get("scale_units", "pixels")
-                distances_units, _ = _convert_to_units(distances, pixels_per_unit)
-                
                 # Create profile plot
                 profile_fig = go.Figure()
                 profile_fig.add_trace(go.Scatter(
-                    x=distances_units,
+                    x=distances,
                     y=intensities,
                     mode='lines',
                     line=dict(color='cyan', width=2),
                     name='Intensity'
                 ))
-                xaxis_title = f"Distance ({units_label})" if pixels_per_unit != 1.0 else "Distance (pixels)"
                 profile_fig.update_layout(
                     title="Line Profile",
-                    xaxis_title=xaxis_title,
+                    xaxis_title="Distance (pixels)",
                     yaxis_title="Intensity",
                     height=400,
                     showlegend=False
@@ -1206,21 +548,6 @@ def line_profile_stage():
                 with col_stat2:
                     st.metric("Min", f"{np.min(intensities):.2f}")
                     st.metric("Std Dev", f"{np.std(intensities):.2f}")
-                
-                # CSV Download
-                line_points = [p1, p2]
-                csv_bytes = _build_profile_csv(
-                    line_points, distances, intensities, sample_coords, 
-                    pixels_per_unit, units_label
-                )
-                st.download_button(
-                    "📥 Download CSV",
-                    data=csv_bytes,
-                    file_name="line_profile.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                    help="Download intensity and coordinate data as CSV"
-                )
             
             elif st.session_state.line_profile_mode == "shape" and st.session_state.shape_center:
                 distances, intensities = lpt.get_shape_perimeter_profile(
@@ -1233,37 +560,18 @@ def line_profile_stage():
                     st.session_state.shape_end_fraction
                 )
                 
-                # Get perimeter points for CSV
-                shape_points = lpt.get_shape_perimeter_points(
-                    st.session_state.shape_type,
-                    st.session_state.shape_center,
-                    st.session_state.shape_size,
-                    st.session_state.shape_angle,
-                    st.session_state.shape_start_fraction,
-                    st.session_state.shape_end_fraction
-                )
-                
-                # Generate sample coordinates (use perimeter points)
-                sample_coords = np.array([(int(round(p[0])), int(round(p[1]))) for p in shape_points[:len(distances)]])
-                
-                # Convert to units
-                pixels_per_unit = st.session_state.get("pixels_per_unit", 1.0)
-                units_label = st.session_state.get("scale_units", "pixels")
-                distances_units, _ = _convert_to_units(distances, pixels_per_unit)
-                
                 # Create profile plot
                 profile_fig = go.Figure()
                 profile_fig.add_trace(go.Scatter(
-                    x=distances_units,
+                    x=distances,
                     y=intensities,
                     mode='lines',
                     line=dict(color='cyan', width=2),
                     name='Intensity'
                 ))
-                xaxis_title = f"Distance along perimeter ({units_label})" if pixels_per_unit != 1.0 else "Distance along perimeter (pixels)"
                 profile_fig.update_layout(
                     title=f"{st.session_state.shape_type.capitalize()} Perimeter Profile",
-                    xaxis_title=xaxis_title,
+                    xaxis_title="Distance along perimeter (pixels)",
                     yaxis_title="Intensity",
                     height=400,
                     showlegend=False
@@ -1279,34 +587,112 @@ def line_profile_stage():
                 with col_stat2:
                     st.metric("Min", f"{np.min(intensities):.2f}")
                     st.metric("Std Dev", f"{np.std(intensities):.2f}")
-                
-                # CSV Download
-                csv_bytes = _build_profile_csv(
-                    shape_points.tolist(), distances, intensities, sample_coords,
-                    pixels_per_unit, units_label
-                )
-                st.download_button(
-                    "📥 Download CSV",
-                    data=csv_bytes,
-                    file_name=f"{st.session_state.shape_type}_perimeter_profile.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                    help="Download intensity and coordinate data as CSV"
-                )
             else:
                 st.info("Configure the line or shape above to see the intensity profile.")
 
+    # -------------------------------------------------------
+    # Canvas-based drawing (click 2 points or freehand draw)
+    # -------------------------------------------------------
+    if st.session_state.line_profile_mode == "canvas":
+        st.markdown("---")
+        st.subheader("Canvas Draw")
+        st.caption("Draw directly on the image to measure an intensity profile without sliders.")
+        canvas_col, canvas_plot_col = st.columns([2, 1])
+
+        with canvas_col:
+            draw_mode = st.radio(
+                "Drawing mode",
+                ["line", "freedraw"],
+                index=0,
+                key="canvas_draw_mode",
+                horizontal=True,
+                help="Use 'line' to click two points, or 'freedraw' to trace any path."
+            )
+            stroke_color = st.color_picker("Stroke color", value="#00ff00", key="canvas_stroke_color")
+            stroke_width = st.slider("Stroke width", 1, 15, value=3, key="canvas_stroke_width")
+            st.caption("Tip: The most recent stroke is used for the profile calculation.")
+
+            # Display a test image to verify conversion worked
+            with st.expander("🔍 Debug: Image Preview", expanded=False):
+                st.image(pil_bg, caption=f"Background image ({pil_bg.size[0]}x{pil_bg.size[1]}, mode: {pil_bg.mode})", use_container_width=True)
+                st.write(f"Image type: {type(pil_bg)}, Mode: {pil_bg.mode}, Size: {pil_bg.size}")
+                # Also show as numpy array info
+                img_array = np.array(pil_bg)
+                st.write(f"Array shape: {img_array.shape}, dtype: {img_array.dtype}, min: {img_array.min()}, max: {img_array.max()}")
+            
+            # Try multiple approaches to ensure the image displays
+            # First, ensure PIL image is in the correct format
+            if pil_bg.mode != 'RGB':
+                pil_bg = pil_bg.convert('RGB')
+            
+            # Try passing as numpy array if PIL doesn't work
+            # Convert back to numpy for potential alternative approach
+            img_for_canvas = np.array(pil_bg)
+            
+            canvas_result = st_canvas(
+                fill_color="rgba(0, 0, 0, 0)",
+                stroke_width=stroke_width,
+                stroke_color=stroke_color,
+                background_image=pil_bg,  # Try PIL first
+                update_streamlit=True,
+                height=canvas_height,
+                width=canvas_width,
+                drawing_mode=draw_mode,
+                key="line_profile_draw_canvas",
+            )
+            
+            # If canvas_result is None or has no background, try numpy array
+            if canvas_result is None or (hasattr(canvas_result, 'json_data') and canvas_result.json_data is None):
+                st.warning("⚠️ Canvas may not have loaded the background image. Trying alternative format...")
+                # Note: streamlit-drawable-canvas typically expects PIL Image, but we can try numpy
+                # Actually, let's keep PIL but ensure it's properly formatted
+                pass
+
+            canvas_points = _extract_points_from_canvas(canvas_result.json_data if canvas_result else None)
+            
+            # Convert canvas coordinates back to original image coordinates if image was resized
+            if canvas_points and (canvas_width != width or canvas_height != height):
+                scale_x = width / canvas_width
+                scale_y = height / canvas_height
+                canvas_points = [(p[0] * scale_x, p[1] * scale_y) for p in canvas_points]
+
+        with canvas_plot_col:
+            st.markdown("### Drawn Intensity Profile")
+            if canvas_points and len(canvas_points) >= 2:
+                distances, intensities, sample_coords = lpt.get_polyline_profile(img, canvas_points)
+
+                profile_fig = go.Figure()
+                profile_fig.add_trace(go.Scatter(
+                    x=distances,
+                    y=intensities,
+                    mode='lines',
+                    line=dict(color='cyan', width=2),
+                    name='Intensity'
+                ))
+                profile_fig.update_layout(
+                    title="Profile from Canvas Path",
+                    xaxis_title="Distance along path (pixels)",
+                    yaxis_title="Intensity",
+                    height=400,
+                    showlegend=False
+                )
+                st.plotly_chart(profile_fig, use_container_width=True)
+
+                csv_bytes = _build_profile_csv(canvas_points, distances, intensities, sample_coords)
+                st.download_button(
+                    "Download CSV (points + intensity)",
+                    data=csv_bytes,
+                    file_name="drawn_intensity_profile.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+            else:
+                st.info("Draw a line or freehand stroke on the canvas to see its intensity profile here.")
+    
     # Add instructions
     st.markdown("---")
-    with st.expander("📖 How to Use", expanded=False):
+    with st.expander("How to Use", expanded=False):
         st.markdown("""
-        **Draw Mode (Default):**
-        1. Select draw type: "line" to click two points, "freedraw" to trace any path, or "circle"/"rectangle" to draw shapes
-        2. For shapes, click and drag on the canvas to create and resize them
-        3. Draw directly on the canvas with your mouse or touch
-        4. The intensity profile updates automatically as you draw
-        5. Download the CSV to get intensity and coordinate data
-        
         **Line Profile Mode:**
         1. Choose "Full Image Line" to create a line spanning the entire image, or uncheck it for a custom line
         2. Use the sliders to adjust the line position, length, and angle
@@ -1314,10 +700,10 @@ def line_profile_stage():
         4. For full image lines, only the angle needs to be set
         
         **Shape Profile Mode:**
-        1. Select a shape type (circle, triangle, square, pentagon, hexagon, heptagon, or octagon)
+        1. Select a shape type (circle, square, or triangle)
         2. Adjust the center position, size, and rotation angle using the sliders
         3. The intensity profile along the perimeter (starting from bottom, going right around) updates automatically
         
-        **Note:** Click interactions on the plotly chart are limited in Streamlit. Use the sliders in the sidebar for precise control, or use Draw mode for interactive drawing.
+        **Note:** Click interactions on the plotly chart are limited in Streamlit. Use the sliders in the sidebar for precise control.
         """)
 
