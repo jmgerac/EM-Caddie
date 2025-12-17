@@ -1,0 +1,54 @@
+# .streamlit/config.toml
+# NC State–inspired theme configuration
+
+[theme]
+# Base layout
+base = "light"
+
+# --- Core Brand Colors (used directly by Streamlit) ---
+
+# Primary interactive color (buttons, sliders, highlights)
+primaryColor = "#CC0000"          # Wolfpack Red
+
+# App background
+backgroundColor = "#FFFFFF"       # Wolfpack White
+
+# Sidebar background
+secondaryBackgroundColor = "#f2f2f2"  # Wolfpack Black, lightest hue
+
+# Default text color
+textColor = "#000000"             # Wolfpack Black
+
+# Font
+font = "sans serif"
+
+
+# ------------------------------------------------------------------
+# EXTENDED PALETTE (DOCUMENTATION / DESIGN GUIDE)
+# Streamlit does not natively consume these, but they are intended
+# for consistent use in custom CSS, components, and visualizations.
+# ------------------------------------------------------------------
+
+[theme.palette]
+
+# Reds
+wolfpackRed      = "#CC0000"
+reynoldsRed      = "#990000"
+
+# Oranges / Yellows
+pyromanFlame     = "#D14905"
+huntYellow       = "#FAC800"
+
+# Greens
+genomicGreen     = "#6F7D1C"
+
+# Teals / Aquas
+carmichaelAqua   = "#008473"
+
+# Blues
+innovationBlue   = "#427E93"
+bioIndigo        = "#4156A1"
+
+# Neutrals
+wolfpackBlack    = "#000000"
+wolfpackWhite    = "#FFFFFF"
