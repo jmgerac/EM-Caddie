@@ -273,7 +273,21 @@ def line_profile_stage():
     pil_bg = Image.fromarray(img_rgb, mode='RGB')
     
     # Limit canvas size if image is too large (canvas has performance issues with very large images)
+    # Also scale canvas to fit nicely in the 2:1 column layout
     max_canvas_size = 2000
+    
+    # Calculate target height to match intensity profile column total height
+    # Right column contains:
+    # - Heading: ~30px
+    # - Combined plot: 400px (from plotly fig height)
+    # - Separators: ~20px
+    # - Profile name inputs: ~40px per profile (estimate ~120px for typical use)
+    # - Download button section: ~80px
+    # Total estimated: ~650px
+    plot_height = 400  # Height of the combined intensity profile plot
+    overhead_height = 250  # Estimate for heading, inputs, buttons, spacing
+    target_canvas_height = plot_height + overhead_height  # ~650px total
+    
     if width > max_canvas_size or height > max_canvas_size:
         # Calculate scaling factor to fit within max size while maintaining aspect ratio
         scale = min(max_canvas_size / width, max_canvas_size / height)
@@ -286,6 +300,15 @@ def line_profile_stage():
     else:
         canvas_width = width
         canvas_height = height
+    
+    # Scale canvas to target height while maintaining aspect ratio (for better fit with right column)
+    # Scale both up and down to match the target height
+    if canvas_height != target_canvas_height:
+        scale_factor = target_canvas_height / canvas_height
+        canvas_width = int(canvas_width * scale_factor)
+        canvas_height = int(canvas_height * scale_factor)
+        # Resize the PIL image to match
+        pil_bg = pil_bg.resize((canvas_width, canvas_height), Image.Resampling.LANCZOS)
     
     # Sidebar controls
     with st.sidebar:
@@ -816,21 +839,21 @@ def line_profile_stage():
                                     # Add secondary axis annotation showing pixel/unit values
                                     st.plotly_chart(profile_fig, use_container_width=True)
                                     
-                                    # Show conversion table
-                                    with st.expander("Angle to Distance Conversion", expanded=False):
-                                        st.markdown(f"**Total Perimeter:** {total_perimeter:.2f} pixels")
-                                        if pixels_per_unit != 1.0:
-                                            perimeter_units = total_perimeter / pixels_per_unit
-                                            st.markdown(f"**Total Perimeter:** {perimeter_units:.2f} {units_label}")
-                                        st.markdown("**Key Angles:**")
-                                        key_angles = [0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi]
-                                        for angle in key_angles:
-                                            fraction = angle / (2 * np.pi)
-                                            dist_px = total_perimeter * fraction
-                                            dist_units, _ = _convert_to_units(np.array([dist_px]), pixels_per_unit)
-                                            angle_label = ['0', 'π/2', 'π', '3π/2', '2π'][int(angle / (np.pi/2))]
-                                            st.markdown(f"- {angle_label}: {dist_px:.2f} px" + 
-                                                       (f" ({dist_units[0]:.2f} {units_label})" if pixels_per_unit != 1.0 else ""))
+                                    # Show conversion table (using details instead of expander to avoid nesting)
+                                    st.markdown("**Angle to Distance Conversion:**")
+                                    st.markdown(f"- **Total Perimeter:** {total_perimeter:.2f} pixels")
+                                    if pixels_per_unit != 1.0:
+                                        perimeter_units = total_perimeter / pixels_per_unit
+                                        st.markdown(f"- **Total Perimeter:** {perimeter_units:.2f} {units_label}")
+                                    st.markdown("**Key Angles:**")
+                                    key_angles = [0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi]
+                                    for angle in key_angles:
+                                        fraction = angle / (2 * np.pi)
+                                        dist_px = total_perimeter * fraction
+                                        dist_units, _ = _convert_to_units(np.array([dist_px]), pixels_per_unit)
+                                        angle_label = ['0', 'π/2', 'π', '3π/2', '2π'][int(angle / (np.pi/2))]
+                                        st.markdown(f"  - {angle_label}: {dist_px:.2f} px" + 
+                                                   (f" ({dist_units[0]:.2f} {units_label})" if pixels_per_unit != 1.0 else ""))
                                 else:
                                     # Fallback for zero-length circle
                                     distances_units, _ = _convert_to_units(obj['distances'], pixels_per_unit)
