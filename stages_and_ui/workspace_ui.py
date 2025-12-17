@@ -367,8 +367,8 @@ def workspace(tools, tool_names, tool_embs, encoder):
     # -----------------------------
     # Sidebar: manual tool select + history
     # -----------------------------
-    # Add button to go to line profile tool
-    if st.sidebar.button("📊 Open Line Profile & Shape Analysis Tool", use_container_width=True, type="secondary"):
+    # Add button to go to image analysis workshop
+    if st.sidebar.button("📊 Open Image Analysis Workshop", use_container_width=True, type="secondary"):
         st.session_state.stage = 5
         st.rerun()
     
