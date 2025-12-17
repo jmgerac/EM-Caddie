@@ -61,6 +61,10 @@ def line_profile_stage():
     
     # Sidebar controls
     with st.sidebar:
+        if st.button("← Back to Workspace", use_container_width=True):
+            st.session_state.stage = 4
+            st.rerun()
+        
         st.markdown("### Mode Selection")
         mode = st.radio(
             "Analysis Mode:",
@@ -288,11 +292,6 @@ def line_profile_stage():
             st.markdown("---")
             st.markdown("**Click Instructions:**")
             st.info("Use the sliders above or manual coordinates to position the shape. The intensity profile along the perimeter updates automatically.")
-        
-        st.markdown("---")
-        if st.button("← Back to Workspace", use_container_width=True):
-            st.session_state.stage = 4
-            st.rerun()
     
     # Main area: Image with interactive plotly
     col1, col2 = st.columns([2, 1])
