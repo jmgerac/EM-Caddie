@@ -1,10 +1,10 @@
+import os
 import streamlit as st
 import atomai
 from sentence_transformers import SentenceTransformer
 import tools.image_operations as imops
 import torch
-
-
+import redivis
 import sys
 import TEMUpSamplerNet_app.model as tem_model
 from TEMUpSamplerNet_app.model import Net
@@ -57,6 +57,10 @@ def load_grain_unet(device=None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     weights_path = r"grain_unet-master/grain_unet-master/grain_unet_pyotrch_100epoch.pth"
+    # if weights_path doesn't exist
+    if not os.path.exists(weights_path):
+        file = redivis.file("wtgg-5c9t33qqt.lvIUsKbKP5h5mBIMtn2LCQ")
+        file.download(weights_path)
     model = UNet(out_channels=1)
     state = torch.load(weights_path, map_location=device)
     model.load_state_dict(state)
