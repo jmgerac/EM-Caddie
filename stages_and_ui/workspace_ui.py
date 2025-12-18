@@ -7,36 +7,29 @@ from app_context import create_button, basic_tool_component, display_tool_help, 
 import tools.image_operations as imops
 from PIL import Image
 from streamlit_cropper import st_cropper
+from app_context import get_segmentor
 import stages_and_ui.line_profile_ui as line_profile_ui
 
 def loading_animation():
-    # Function to embed MP4 as autoplaying, looped, muted video
-    def autoplay_video(path, width=300):
-        with open(path, "rb") as f:
-            data = f.read()
-        b64 = base64.b64encode(data).decode()
-        html = f"""
-            <video autoplay loop muted playsinline style="width:{width}px; height:auto;">
-                <source src="data:video/mp4;base64,{b64}" type="video/mp4">
-            </video>
-            """
-        return html
+    gif_url = (
+        "https://github.com/jmgerac/EM-Caddie/blob/main/assets/"
+        "video_0_to_4s_slowstart_cropped_transparent.gif?raw=true"
+    )
 
-    video_html = autoplay_video("quick_golf_miss.mp4", width=300)
-
-    # Side-by-side title and video, vertically centered
     st.markdown(
         f"""
-            <div style="display:flex; align-items:center; justify-content:center; gap:50px;">
-                <h1 style="font-size:80px; margin:0;">EM Caddie</h1>
-                {video_html}
-            </div>
-            """,
-        unsafe_allow_html=True
+        <div style="display:flex; align-items:center; justify-content:center; gap:50px;">
+            <h1 style="font-size:80px; margin:0;">EM Caddie</h1>
+            <img src="{gif_url}" width="300" />
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
+
     time.sleep(0.7)
     st.session_state.stage = 2
     st.rerun()
+
 
 
 def initial_upload():
@@ -287,7 +280,7 @@ def reset_cb():
     st.session_state.working_img = orig
 
 
-def apply_pipeline_cb(tools, scale_bar_params=None):
+def apply_pipeline_cb(tools, scale_bar_params=None, segmentation_params=None):
     if not st.session_state.pipeline:
         return
 
@@ -328,9 +321,31 @@ def apply_pipeline_cb(tools, scale_bar_params=None):
                     total_image_length=100.0,
                 )
         else:
-            tool_fn = tools[tool_name][1]
-            if tool_fn is not None:
-                img = tool_fn(img.copy())
+            if tool_name == "AtomAI Segmentation":
+                segmentor = get_segmentor()
+                prob_mask = imops.atomai_segment(img.copy(), segmentor)
+
+                # Run model once
+                prob_mask = imops.atomai_segment(img.copy(), segmentor)
+
+                # Apply UI choice
+                if segmentation_params:
+                    if segmentation_params["mode"] == "Binary threshold":
+                        _, img = cv2.threshold(
+                            prob_mask,
+                            segmentation_params["threshold"],
+                            255,
+                            cv2.THRESH_BINARY,
+                        )
+                    else:
+                        img = prob_mask
+                else:
+                    img = prob_mask
+
+            else:
+                tool_fn = tools[tool_name][1]
+                if tool_fn is not None:
+                    img = tool_fn(img.copy())
 
         # Record timeline step
         st.session_state.timeline.append(tool_name)
@@ -367,8 +382,13 @@ def workspace(tools, tool_names, tool_embs, encoder):
     # -----------------------------
     # Sidebar: manual tool select + history
     # -----------------------------
-    # Add button to go to line profile tool
-    if st.sidebar.button("📊 Open Line Profile & Shape Analysis Tool", use_container_width=True, type="secondary"):
+    # Button to return to the cropping stage
+    if st.sidebar.button("← Back to Cropping", use_container_width=True, type="secondary"):
+        st.session_state.stage = 3
+        st.rerun()
+    
+    # Add button to go to image analysis workshop
+    if st.sidebar.button("📊 Open Image Analysis Workshop", use_container_width=True, type="secondary"):
         st.session_state.stage = 5
         st.rerun()
     
@@ -437,8 +457,6 @@ def workspace(tools, tool_names, tool_embs, encoder):
                 on_click=reset_cb,
             )
 
-        
-
 
         # --- tool / pipeline suggestion ---
         pipeline = []
@@ -456,202 +474,248 @@ def workspace(tools, tool_names, tool_embs, encoder):
         else:
             display_tool_help()
 
-        # Check if scale bar is in pipeline and show input form
+        # Check if scale bar is in pipeline and show button to open popover
         scale_bar_in_pipeline = "Add Scale Bar" in pipeline
-        scale_bar_params = None
+        scale_bar_params = st.session_state.get("scale_bar_params", None)
+
+        # Check if atomai in pipeline
+        segmentation_in_pipeline = "AtomAI Segmentation" in pipeline
+        segmentation_params = None
         
         if scale_bar_in_pipeline:
+            # Button to open scale bar settings popover
+            with st.popover("⚙️ Configure Scale Bar Settings", use_container_width=True):
+                st.markdown("### Scale Bar Settings")
+                
+                # Create two columns: preview on left, settings on right
+                preview_col, settings_col = st.columns([1.2, 1])
+                
+                with settings_col:
+                    with st.container(border=True):
+                        # Custom units input
+                        units = st.text_input(
+                            "Units:",
+                            value=st.session_state.get("scale_bar_units", "nm"),
+                            key="scale_bar_units",
+                            help="Enter the unit for your scale bar (e.g., nm, μm, mm, px)"
+                        )
+                        
+                        # Input mode selection
+                        input_mode = st.radio(
+                            "Input Mode:",
+                            ["Total Image Length", "Pixel to Scale"],
+                            index=0 if st.session_state.get("scale_bar_input_mode", "Total Image Length") == "Total Image Length" else 1,
+                            key="scale_bar_input_mode",
+                            help="Choose how to specify the scale"
+                        )
+                        
+                        if input_mode == "Total Image Length":
+                            total_image_length = st.number_input(
+                                "Total image length:",
+                                min_value=0.1,
+                                value=st.session_state.get("scale_bar_total_length", 100.0),
+                                step=1.0,
+                                key="scale_bar_total_length",
+                                help=f"The total length of the image in {units}"
+                            )
+                            pixel_to_scale = None
+                        else:  # Pixel to Scale
+                            pixel_to_scale = st.number_input(
+                                "Length per pixel:",
+                                min_value=0.0001,
+                                value=st.session_state.get("scale_bar_pixel_to_scale", 0.1),
+                                step=0.01,
+                                format="%.4f",
+                                key="scale_bar_pixel_to_scale",
+                                help=f"Length per pixel in {units}/pixel"
+                            )
+                            total_image_length = None
+                        
+                        # Scale bar length
+                        scale_length = st.number_input(
+                            f"Scale bar length ({units}):",
+                            min_value=0.1,
+                            value=st.session_state.get("scale_bar_length", 10.0),
+                            step=1.0,
+                            key="scale_bar_length",
+                            help=f"The desired length of the scale bar in {units}"
+                        )
+                        
+                        # Position selection
+                        position = st.selectbox(
+                            "Position:",
+                            ["Bottom Right", "Bottom Left", "Top Right", "Top Left", "Custom"],
+                            index=["Bottom Right", "Bottom Left", "Top Right", "Top Left", "Custom"].index(
+                                st.session_state.get("scale_bar_position", "Bottom Right")
+                            ),
+                            key="scale_bar_position",
+                            help="Select the position of the scale bar"
+                        )
+                        
+                        # Custom position controls
+                        if position == "Custom":
+                            st.markdown("**Position Controls:** Move the scale bar across the entire image")
+                            col_x, col_y = st.columns(2)
+                            with col_x:
+                                x_offset = st.slider(
+                                    "Horizontal Position:",
+                                    min_value=0.0,
+                                    max_value=1.0,
+                                    value=st.session_state.get("scale_bar_x_offset", 0.9),
+                                    step=0.01,
+                                    key="scale_bar_x_offset",
+                                    help="0.0 = left edge, 1.0 = right edge. The scale bar will move horizontally across the image."
+                                )
+                            with col_y:
+                                y_offset = st.slider(
+                                    "Vertical Position:",
+                                    min_value=0.0,
+                                    max_value=1.0,
+                                    value=st.session_state.get("scale_bar_y_offset", 0.95),
+                                    step=0.01,
+                                    key="scale_bar_y_offset",
+                                    help="0.0 = top edge, 1.0 = bottom edge. The scale bar will move vertically across the image."
+                                )
+                            # Set position to "custom" for the function call
+                            position_param = "custom"
+                        else:
+                            x_offset = None
+                            y_offset = None
+                            # Convert position string to function parameter
+                            position_map = {
+                                "Bottom Right": "bottom_right",
+                                "Bottom Left": "bottom_left",
+                                "Top Right": "top_right",
+                                "Top Left": "top_left"
+                            }
+                            position_param = position_map[position]
+                        
+                        # Font size adjustment
+                        font_scale_factor = st.slider(
+                            "Font Size:",
+                            min_value=0.5,
+                            max_value=3.0,
+                            value=st.session_state.get("scale_bar_font_scale", 1.0),
+                            step=0.1,
+                            key="scale_bar_font_scale",
+                            help="Adjust the font size of the scale bar label"
+                        )
+                        
+                        # Color and appearance settings
+                        st.markdown("---")
+                        st.markdown("**Appearance Settings:**")
+                        
+                        # Background toggle
+                        show_background = st.checkbox(
+                            "Show solid black background",
+                            value=st.session_state.get("scale_bar_show_background", True),
+                            key="scale_bar_show_background",
+                            help="Toggle the solid black background box behind the scale bar and text"
+                        )
+                        
+                        # Color pickers
+                        col_bar, col_font = st.columns(2)
+                        with col_bar:
+                            bar_color = st.color_picker(
+                                "Scale Bar Color:",
+                                value=st.session_state.get("scale_bar_color", "#FFFFFF"),
+                                key="scale_bar_color",
+                                help="Choose the color of the scale bar"
+                            )
+                        with col_font:
+                            font_color = st.color_picker(
+                                "Font Color:",
+                                value=st.session_state.get("scale_bar_font_color", "#FFFFFF"),
+                                key="scale_bar_font_color",
+                                help="Choose the color of the scale bar text"
+                            )
+                        
+                        # Store parameters in session state
+                        st.session_state.scale_bar_params = {
+                            "scale_bar_length": scale_length,
+                            "units": units,
+                            "input_mode": "total_length" if input_mode == "Total Image Length" else "pixel_to_scale",
+                            "pixel_to_scale": pixel_to_scale,
+                            "total_image_length": total_image_length,
+                            "position": position_param,
+                            "x_offset": x_offset,
+                            "y_offset": y_offset,
+                            "font_scale_factor": font_scale_factor,
+                            "show_background": show_background,
+                            "bar_color": bar_color,
+                            "font_color": font_color
+                        }
+                        scale_bar_params = st.session_state.scale_bar_params
+                
+                with preview_col:
+                    # Preview section
+                    st.markdown("### Preview")
+                    preview_img = st.session_state.get("working_img")
+                    if preview_img is not None:
+                        # Create preview with scale bar (updates in real-time as sliders change)
+                        preview_with_scale = imops.add_scale_bar(
+                            preview_img.copy(),
+                            scale_length,
+                            units=units,
+                            input_mode=scale_bar_params["input_mode"],
+                            pixel_to_scale=pixel_to_scale,
+                            total_image_length=total_image_length,
+                            position=position_param,
+                            x_offset=x_offset,
+                            y_offset=y_offset,
+                            font_scale_factor=font_scale_factor,
+                            show_background=show_background,
+                            bar_color=bar_color,
+                            font_color=font_color
+                        )
+                        
+                        # Convert for display
+                        if len(preview_with_scale.shape) == 3:
+                            preview_rgb = cv2.cvtColor(preview_with_scale, cv2.COLOR_BGR2RGB)
+                        else:
+                            preview_rgb = preview_with_scale
+                        
+                        st.image(preview_rgb, caption="Preview with Scale Bar", use_container_width=True)
+
+        if segmentation_in_pipeline:
             st.markdown("---")
-            st.markdown("### Scale Bar Settings")
+            st.markdown("### Segmentation Output")
+
             with st.container(border=True):
-                # Custom units input
-                units = st.text_input(
-                    "Units:",
-                    value="nm",
-                    key="scale_bar_units",
-                    help="Enter the unit for your scale bar (e.g., nm, μm, mm, px)"
+
+                seg_mode = st.radio(
+                    "Output type:",
+                    ["Probability mask", "Binary threshold"],
+                    index=0,
+                    key="seg_output_mode",
                 )
-                
-                # Input mode selection
-                input_mode = st.radio(
-                    "Input Mode:",
-                    ["Total Image Length", "Pixel to Scale"],
-                    key="scale_bar_input_mode",
-                    help="Choose how to specify the scale"
-                )
-                
-                if input_mode == "Total Image Length":
-                    total_image_length = st.number_input(
-                        "Total image length:",
-                        min_value=0.1,
-                        value=100.0,
-                        step=1.0,
-                        key="scale_bar_total_length",
-                        help=f"The total length of the image in {units}"
+
+                threshold = None
+                if seg_mode == "Binary threshold":
+                    threshold = st.slider(
+                        "Threshold",
+                        min_value=0,
+                        max_value=255,
+                        value=128,
+                        step=1,
+                        key="seg_threshold",
                     )
-                    pixel_to_scale = None
-                else:  # Pixel to Scale
-                    pixel_to_scale = st.number_input(
-                        "Length per pixel:",
-                        min_value=0.0001,
-                        value=0.1,
-                        step=0.01,
-                        format="%.4f",
-                        key="scale_bar_pixel_to_scale",
-                        help=f"Length per pixel in {units}/pixel"
-                    )
-                    total_image_length = None
-                
-                # Scale bar length
-                scale_length = st.number_input(
-                    f"Scale bar length ({units}):",
-                    min_value=0.1,
-                    value=10.0,
-                    step=1.0,
-                    key="scale_bar_length",
-                    help=f"The desired length of the scale bar in {units}"
-                )
-                
-                # Position selection
-                position = st.selectbox(
-                    "Position:",
-                    ["Bottom Right", "Bottom Left", "Top Right", "Top Left", "Custom"],
-                    key="scale_bar_position",
-                    help="Select the position of the scale bar"
-                )
-                
-                # Custom position controls
-                if position == "Custom":
-                    st.markdown("**Position Controls:** Move the scale bar across the entire image")
-                    col_x, col_y = st.columns(2)
-                    with col_x:
-                        x_offset = st.slider(
-                            "Horizontal Position:",
-                            min_value=0.0,
-                            max_value=1.0,
-                            value=0.9,
-                            step=0.01,
-                            key="scale_bar_x_offset",
-                            help="0.0 = left edge, 1.0 = right edge. The scale bar will move horizontally across the image."
-                        )
-                    with col_y:
-                        y_offset = st.slider(
-                            "Vertical Position:",
-                            min_value=0.0,
-                            max_value=1.0,
-                            value=0.95,
-                            step=0.01,
-                            key="scale_bar_y_offset",
-                            help="0.0 = top edge, 1.0 = bottom edge. The scale bar will move vertically across the image."
-                        )
-                    # Set position to "custom" for the function call
-                    position_param = "custom"
-                else:
-                    x_offset = None
-                    y_offset = None
-                    # Convert position string to function parameter
-                    position_map = {
-                        "Bottom Right": "bottom_right",
-                        "Bottom Left": "bottom_left",
-                        "Top Right": "top_right",
-                        "Top Left": "top_left"
-                    }
-                    position_param = position_map[position]
-                
-                # Font size adjustment
-                font_scale_factor = st.slider(
-                    "Font Size:",
-                    min_value=0.5,
-                    max_value=3.0,
-                    value=1.0,
-                    step=0.1,
-                    key="scale_bar_font_scale",
-                    help="Adjust the font size of the scale bar label"
-                )
-                
-                # Color and appearance settings
-                st.markdown("---")
-                st.markdown("**Appearance Settings:**")
-                
-                # Background toggle
-                show_background = st.checkbox(
-                    "Show solid black background",
-                    value=True,
-                    key="scale_bar_show_background",
-                    help="Toggle the solid black background box behind the scale bar and text"
-                )
-                
-                # Color pickers
-                col_bar, col_font = st.columns(2)
-                with col_bar:
-                    bar_color = st.color_picker(
-                        "Scale Bar Color:",
-                        value="#FFFFFF",
-                        key="scale_bar_color",
-                        help="Choose the color of the scale bar"
-                    )
-                with col_font:
-                    font_color = st.color_picker(
-                        "Font Color:",
-                        value="#FFFFFF",
-                        key="scale_bar_font_color",
-                        help="Choose the color of the scale bar text"
-                    )
-                
-                # Store parameters
-                scale_bar_params = {
-                    "scale_bar_length": scale_length,
-                    "units": units,
-                    "input_mode": "total_length" if input_mode == "Total Image Length" else "pixel_to_scale",
-                    "pixel_to_scale": pixel_to_scale,
-                    "total_image_length": total_image_length,
-                    "position": position_param,
-                    "x_offset": x_offset,
-                    "y_offset": y_offset,
-                    "font_scale_factor": font_scale_factor,
-                    "show_background": show_background,
-                    "bar_color": bar_color,
-                    "font_color": font_color
+
+                segmentation_params = {
+                    "mode": seg_mode,
+                    "threshold": threshold,
                 }
-                
-                # Preview section
-                st.markdown("---")
-                st.markdown("### Preview")
-                preview_img = st.session_state.get("working_img")
-                if preview_img is not None:
-                    # Create preview with scale bar (updates in real-time as sliders change)
-                    preview_with_scale = imops.add_scale_bar(
-                        preview_img.copy(),
-                        scale_length,
-                        units=units,
-                        input_mode=scale_bar_params["input_mode"],
-                        pixel_to_scale=pixel_to_scale,
-                        total_image_length=total_image_length,
-                        position=position_param,
-                        x_offset=x_offset,
-                        y_offset=y_offset,
-                        font_scale_factor=font_scale_factor,
-                        show_background=show_background,
-                        bar_color=bar_color,
-                        font_color=font_color
-                    )
-                    
-                    # Convert for display
-                    if len(preview_with_scale.shape) == 3:
-                        preview_rgb = cv2.cvtColor(preview_with_scale, cv2.COLOR_BGR2RGB)
-                    else:
-                        preview_rgb = preview_with_scale
-                    
-                    st.image(preview_rgb, caption="Preview with Scale Bar", use_container_width=True)
-
-
+        # Get scale bar params for apply function
+        apply_scale_bar_params = st.session_state.get("scale_bar_params", None) if scale_bar_in_pipeline else None
+        
         apply_clicked = create_button(
             "Apply pipeline",
             key="apply_pipeline",
             on_click=apply_pipeline_cb,
-            args=(tools,),
+            args=(tools, scale_bar_params, segmentation_params),
             disabled=not st.session_state.pipeline,
         )
+
     # -----------------------------
     # Main column: image + actions
     # -----------------------------
@@ -661,20 +725,26 @@ def workspace(tools, tool_names, tool_embs, encoder):
         if img is None:
             st.info("No image loaded.")
             return
-    
 
         # --- display image ---
         display_img = st.session_state.working_img
-        if len(display_img.shape) == 3:
+
+        # ---- HARD SAFETY CONVERSION ----
+        if display_img.dtype != np.uint8:
+            if display_img.max() <= 1.0:
+                # float image in [0,1]
+                display_img = (display_img * 255).astype(np.uint8)
+            else:
+                # float image in [0,255] or worse
+                display_img = np.clip(display_img, 0, 255).astype(np.uint8)
+        # --------------------------------
+
+        if display_img.ndim == 3:
             display_rgb = cv2.cvtColor(display_img, cv2.COLOR_BGR2RGB)
         else:
             display_rgb = display_img
 
-        st.image(
-            display_rgb,
-            caption="Current Image",
-            width=900
-        )
+        st.image(display_rgb, caption="Current Image", width="stretch")
 
         # --- download ---
         out = (

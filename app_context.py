@@ -10,6 +10,17 @@ import TEMUpSamplerNet_app.model as tem_model
 from TEMUpSamplerNet_app.model import Net
 sys.modules["model"] = tem_model
 
+tool_aliases = {
+    "fft": "Fast Fourier Transform (FFT)",
+    "fourier": "Fast Fourier Transform (FFT)",
+    # Add more as needed
+}
+
+def resolve_tool_name(name: str) -> str:
+    name = name.strip().lower()
+    return tool_aliases.get(name, name)
+
+
 from unet import UNet
 
 from unet_model.inference.infer import single_inference
@@ -64,6 +75,7 @@ def prep_tools():
         "Edge Detection": ("Detect edges in an image using the Canny algorithm.", imops.edge_detect),
         "Gaussian Blur": ("Blur the image using a Gaussian kernel.", imops.blur),
         "Invert Colors": ("Invert all the colors in the image.", imops.invert),
+        "Fast Fourier Transform (FFT)": ("Take the fast fourier transform of the image.", imops.fft),
         "Super Resolution": ("Denoise and upsample the image to create super resolution.", lambda img: imops.super_res(img, super_res_model, device)),
         "AtomAI Segmentation": ("Identify and highlight atom centers.",
                                 lambda img: imops.atomai_segment(img, segmentor)),
@@ -73,6 +85,7 @@ def prep_tools():
     tool_names = list(tools.keys())
     tool_descs = [desc for desc, fn in tools.values()]
     tool_embs = encoder.encode(tool_descs, normalize_embeddings=True)
+
     return tools, tool_names, tool_descs, tool_embs
 
 encoder = load_encoder()
@@ -95,6 +108,20 @@ def interpret_query(
     query = query.lower().replace(",", "\n").replace("and", "\n")
     query_parts = [q.strip() for q in query.split("\n") if q.strip()]
 
+    resolved_tools = []
+
+    # Apply aliases
+    remaining_parts = []
+    for part in query_parts:
+        alias_hit = tool_aliases.get(part)
+        if alias_hit is not None:
+            resolved_tools.append(alias_hit)
+        else:
+            remaining_parts.append(part)
+
+    if not remaining_parts:
+        return resolved_tools
+
     # Encode all query parts at once
     query_embs = encoder.encode(
         query_parts,
@@ -104,7 +131,6 @@ def interpret_query(
     # Similarity matrix: (M, D) @ (D, N) -> (M, N)
     scores = query_embs @ tool_embs.T
 
-    resolved_tools = []
     for row in scores:
         best_idx = row.argmax()
         if row[best_idx] >= threshold:
@@ -124,7 +150,8 @@ def basic_tool_component(tool_name: str, tools: dict):
     :return: True if the "Apply" button was clicked, False otherwise.
     """
     # Get the description from the global tools dictionary
-    tool_desc = tools[tool_name][0]
+    canonical_name = resolve_tool_name(tool_name)
+    tool_desc = tools[canonical_name][0]
 
     st.markdown("## **Suggested Tool:**",
                 unsafe_allow_html=False)

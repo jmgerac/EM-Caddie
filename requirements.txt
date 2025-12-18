@@ -1,2 +1,6 @@
+streamlit==1.52.1
 streamlit-cropper
 plotly
+streamlit-drawable-canvas==0.9.0
+svgpathtools
+svgwrite

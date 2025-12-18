@@ -16,27 +16,110 @@ def get_line_profile(img, p1, p2):
     else:
         gray = img.copy()
     
-    # Get line length
-    length = int(np.hypot(p2[0] - p1[0], p2[1] - p1[1]))
+    # Get line length in pixels (use float for precision)
+    length = np.hypot(p2[0] - p1[0], p2[1] - p1[1])
     
     if length == 0:
         return np.array([0]), np.array([gray[int(p1[1]), int(p1[0])]])
     
+    # Sample at least one point per pixel, but ensure we cover the entire range
+    # Use ceil to ensure we get at least length+1 points to cover endpoints
+    num_samples = max(int(np.ceil(length)) + 1, 2)
+    
     # Create array of x and y coordinates along the line
-    x = np.linspace(p1[0], p2[0], length)
-    y = np.linspace(p1[1], p2[1], length)
+    # Use endpoint=True to ensure we include both p1 and p2
+    x = np.linspace(p1[0], p2[0], num_samples, endpoint=True)
+    y = np.linspace(p1[1], p2[1], num_samples, endpoint=True)
     
     # Extract pixel values along the line
     intensities = []
-    for i in range(length):
-        xi, yi = int(x[i]), int(y[i])
+    distances = []
+    cumulative_dist = 0.0
+    
+    for i in range(num_samples):
+        xi, yi = int(round(x[i])), int(round(y[i]))
+        
+        # Calculate distance from start point
+        if i > 0:
+            segment_dist = np.hypot(x[i] - x[i-1], y[i] - y[i-1])
+            cumulative_dist += segment_dist
+        
+        distances.append(cumulative_dist)
+        
         if 0 <= xi < gray.shape[1] and 0 <= yi < gray.shape[0]:
             intensities.append(gray[yi, xi])
         else:
             intensities.append(0)
     
-    distances = np.linspace(0, length, length)
-    return distances, np.array(intensities)
+    return np.array(distances), np.array(intensities)
+
+
+def get_polyline_profile(img, points):
+    """
+    Extract intensity profile along a polyline (list of x, y points).
+    Consecutive points are joined with straight segments.
+    For 2-point lines, ensures complete coverage without gaps.
+
+    :param img: Input image (grayscale or BGR)
+    :param points: Iterable of (x, y) points; at least two are required
+    :return: distances (array), intensities (array), sample_coords (array of (x, y))
+    """
+    if len(points) < 2:
+        return np.array([]), np.array([]), np.empty((0, 2))
+
+    # Convert to grayscale if needed
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if len(img.shape) == 3 else img.copy()
+
+    distances: list[float] = []
+    intensities: list[float] = []
+    sample_coords: list[tuple[int, int]] = []
+    running_dist = 0.0
+
+    for idx in range(len(points) - 1):
+        x1, y1 = points[idx]
+        x2, y2 = points[idx + 1]
+
+        segment_len = float(np.hypot(x2 - x1, y2 - y1))
+        
+        # For accurate sampling, use at least one sample per pixel, but ensure we cover the full segment
+        # Use endpoint=True to ensure we include the endpoint
+        num_samples = max(int(np.ceil(segment_len)) + 1, 2)
+        
+        xs = np.linspace(x1, x2, num_samples, endpoint=True)
+        ys = np.linspace(y1, y2, num_samples, endpoint=True)
+
+        for step_idx in range(num_samples):
+            # Skip the first point of subsequent segments to avoid duplicate sampling
+            if idx > 0 and step_idx == 0:
+                continue
+
+            xi, yi = int(round(xs[step_idx])), int(round(ys[step_idx]))
+            
+            # Calculate distance from start of current segment
+            if step_idx == 0 and idx == 0:
+                # First point of first segment - distance is 0
+                segment_dist = 0.0
+            elif step_idx == 0:
+                # First point of subsequent segment - distance from previous segment's endpoint
+                prev_x, prev_y = points[idx]
+                segment_dist = np.hypot(xs[step_idx] - prev_x, ys[step_idx] - prev_y)
+            else:
+                # Distance from previous sampled point
+                prev_x = xs[step_idx - 1]
+                prev_y = ys[step_idx - 1]
+                segment_dist = np.hypot(xs[step_idx] - prev_x, ys[step_idx] - prev_y)
+            
+            running_dist += segment_dist
+
+            if 0 <= xi < gray.shape[1] and 0 <= yi < gray.shape[0]:
+                intensities.append(gray[yi, xi])
+            else:
+                intensities.append(0)
+
+            distances.append(running_dist)
+            sample_coords.append((xi, yi))
+
+    return np.array(distances), np.array(intensities), np.array(sample_coords)
 
 
 def get_full_image_line(img, angle_degrees, vertical_offset=0.5):
