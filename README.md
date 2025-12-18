@@ -98,7 +98,9 @@ Once installed, follow these simple steps each time you want to use the applicat
 
 5. **When you're done**, press `Ctrl+C` in the terminal to stop the application
 
-## Using EM-Caddie
+## Using EM-Caddie     
+
+
 
 1. **Upload your microscopy images** through the web interface (supports common formats: TIFF, PNG, JPEG)
 2. **Prepare your image** using the crop tool
@@ -108,7 +110,7 @@ Once installed, follow these simple steps each time you want to use the applicat
    - "Segment the atomic structures and add a scale bar"
 4. **Analyze and export**: View results, compare before/after, and download processed images
 
-![Line Profile Tool Example GIF](https://github.com/jmgerac/EM-Caddie/blob/f058a4b383173c1a4cc36eb87ccd677df7dd4256/assets/lineprofile.gif)
+![Line Profile Tool Example GIF](https://github.com/jmgerac/EM-Caddie/blob/d636b1beaa2d73adf728a065a4e8ce70f9229d59/assets/lineprofile.gif)
 
 ### Example Workflows
 
