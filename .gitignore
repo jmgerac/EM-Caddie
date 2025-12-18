@@ -7,3 +7,4 @@ atomai_app/data/
 **.pyc
 .idea/
 *.iml
+**/grain_unet_pyotrch_100epoch.pth
