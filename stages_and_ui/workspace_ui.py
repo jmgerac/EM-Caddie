@@ -367,6 +367,11 @@ def workspace(tools, tool_names, tool_embs, encoder):
     # -----------------------------
     # Sidebar: manual tool select + history
     # -----------------------------
+    # Button to return to the cropping stage
+    if st.sidebar.button("← Back to Cropping", use_container_width=True, type="secondary"):
+        st.session_state.stage = 3
+        st.rerun()
+    
     # Add button to go to image analysis workshop
     if st.sidebar.button("📊 Open Image Analysis Workshop", use_container_width=True, type="secondary"):
         st.session_state.stage = 5
@@ -661,7 +666,6 @@ def workspace(tools, tool_names, tool_embs, encoder):
         if img is None:
             st.info("No image loaded.")
             return
-    
 
         # --- display image ---
         display_img = st.session_state.working_img
@@ -670,10 +674,13 @@ def workspace(tools, tool_names, tool_embs, encoder):
         else:
             display_rgb = display_img
 
+        # Scale the processing-space image to fit the available main column width
+        # so it never exceeds the horizontal space between the left edge and the
+        # right-hand tools column. Height scales automatically with aspect ratio.
         st.image(
             display_rgb,
             caption="Current Image",
-            width=900
+            use_container_width=True,
         )
 
         # --- download ---

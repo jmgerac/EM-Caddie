@@ -72,6 +72,8 @@ def image_cropper():
             )
             # Limit the info box width to the options column only
             st.info(f"**Original Dimensions:** {original_width} × {original_height} px")
+            # Placeholder for crop dimensions - will be filled after images are computed
+            crop_dims_placeholder = st.empty()
 
         # Container where the preview will appear (to the right of options),
         # wrapped in a small left margin to approximate a 5px gap.
@@ -216,22 +218,34 @@ def image_cropper():
             )
 
     # -----------------------------
+    # Update crop dimensions placeholder (after images are computed)
+    # -----------------------------
+    # Update the crop dimensions box in opt_col position
+    if mode == "Hand crop" and hand_cropped_img is not None:
+        hw, hh = hand_cropped_img.size
+        crop_dims_placeholder.info(f"**Crop Dimensions:** {hw} × {hh} px")
+    elif mode == "Coordinate crop" and coord_cropped_img is not None:
+        cw, ch = coord_cropped_img.size
+        crop_dims_placeholder.info(f"**Crop Dimensions:** {cw} × {ch} px")
+    else:
+        # Clear the placeholder if no crop is selected
+        crop_dims_placeholder.empty()
+
+    # -----------------------------
     # Right column: hand/coordinate preview image (to the right of options)
     # -----------------------------
-    # Previews are rendered in the preview_container to the right of the options.
+    # Previews are rendered in the preview_container.
     with preview_container:
         if mode == "Hand crop" and hand_cropped_img is not None:
-            hw, hh = hand_cropped_img.size
             st.image(
                 hand_cropped_img,
-                caption=f"Hand crop ({hw} × {hh} px)",
+                caption="Hand crop preview",
                 use_container_width=True,
             )
         elif mode == "Coordinate crop" and coord_cropped_img is not None:
-            cw, ch = coord_cropped_img.size
             st.image(
                 coord_cropped_img,
-                caption=f"Coordinate crop ({cw} × {ch} px)",
+                caption="Coordinate crop preview",
                 use_container_width=True,
             )
 
