@@ -38,3 +38,4 @@ dependencies:
       # Utilities
       - tqdm==4.67.1
       - gitpython==3.1.45
+      - redivis==0.18.18
