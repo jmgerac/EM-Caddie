@@ -16,8 +16,7 @@ def loading_animation():
     st.markdown(
         f"""
         <div style="display:flex; align-items:center; justify-content:center; gap:50px;">
-            <h1 style="font-size:80px; margin:0;">EM Caddie</h1>
-            <img src="{gif_url}" width="300" />
+\            <img src="{gif_url}" width="900" />
         </div>
         """,
         unsafe_allow_html=True,
