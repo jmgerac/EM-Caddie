@@ -41,8 +41,7 @@ Perfect for electron microscopy, atomic force microscopy, and other high-resolut
 
 ### Prerequisites
 
-You'll need [Anaconda](https://www.anaconda.com/download) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) installed on your computer. Don't worry - this is a one-time setup that makes installing scientific software much easier.
-
+You'll need [Anaconda](https://www.anaconda.com/download) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) installed on your computer.
 **Note**: If you have an NVIDIA GPU, the software will automatically use it for faster processing. If not, it will work fine on your CPU (just a bit slower).
 
 ### Easy Installation (Recommended)
