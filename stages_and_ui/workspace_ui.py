@@ -437,8 +437,6 @@ def workspace(tools, tool_names, tool_embs, encoder):
                 on_click=reset_cb,
             )
 
-        
-
 
         # --- tool / pipeline suggestion ---
         pipeline = []
@@ -661,20 +659,25 @@ def workspace(tools, tool_names, tool_embs, encoder):
         if img is None:
             st.info("No image loaded.")
             return
-    
 
-        # --- display image ---
         display_img = st.session_state.working_img
-        if len(display_img.shape) == 3:
+
+        # ---- HARD SAFETY CONVERSION ----
+        if display_img.dtype != np.uint8:
+            if display_img.max() <= 1.0:
+                # float image in [0,1]
+                display_img = (display_img * 255).astype(np.uint8)
+            else:
+                # float image in [0,255] or worse
+                display_img = np.clip(display_img, 0, 255).astype(np.uint8)
+        # --------------------------------
+
+        if display_img.ndim == 3:
             display_rgb = cv2.cvtColor(display_img, cv2.COLOR_BGR2RGB)
         else:
             display_rgb = display_img
 
-        st.image(
-            display_rgb,
-            caption="Current Image",
-            width=900
-        )
+        st.image(display_rgb, caption="Current Image", width=900)
 
         # --- download ---
         out = (

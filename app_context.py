@@ -43,6 +43,7 @@ def prep_tools():
         "Edge Detection": ("Detect edges in an image using the Canny algorithm.", imops.edge_detect),
         "Gaussian Blur": ("Blur the image using a Gaussian kernel.", imops.blur),
         "Invert Colors": ("Invert all the colors in the image.", imops.invert),
+        "Fast Fourier Transform (FFT)": ("Take the fast fourier transform of the image.", imops.fft),
         "Super Resolution": ("Denoise and upsample the image to create super resolution.", lambda img: imops.super_res(img, super_res_model, device)),
         "AtomAI Segmentation": ("Identify and highlight atom centers.",
                                 lambda img: imops.atomai_segment(img, segmentor)),

@@ -30,6 +30,35 @@ def blur(img):
 def invert(img):
     return 255 - img
 
+def fft(img):
+    # Ensure grayscale
+    if img.ndim == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    img = img.astype(np.float32)
+
+    # FFT
+    f = np.fft.fft2(img)
+    fshift = np.fft.fftshift(f)
+    magnitude = np.log1p(np.abs(fshift))
+
+    # Safe normalization
+    mag_min = magnitude.min()
+    mag_max = magnitude.max()
+
+    if mag_max > mag_min:
+        magnitude = (magnitude - mag_min) / (mag_max - mag_min)
+    else:
+        magnitude = np.zeros_like(magnitude)
+
+    # Convert to uint8 [0,255]
+    magnitude_uint8 = (magnitude * 255).astype(np.uint8)
+
+    return magnitude_uint8
+
+
+
+
 def atomai_segment(img, segmentor):
     # Convert to grayscale if BGR
     if len(img.shape) == 3:
