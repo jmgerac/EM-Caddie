@@ -747,7 +747,7 @@ def workspace(tools, tool_names, tool_embs, encoder):
         else:
             display_rgb = display_img
 
-        st.image(display_rgb, caption="Current Image", width=900)
+        st.image(display_rgb, caption="Current Image", width="auto")
 
         # --- download ---
         out = (
