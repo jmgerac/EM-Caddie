@@ -64,6 +64,7 @@ The installer will:
 - Tell you what to do next
 
 That's it! The installation takes a few minutes, so take a little break!
+On the first run, a popup will prompt you to sign in to a [Redivis](https://redivis.com/) account, in order to access some of our models.
 
 ### Alternative: Manual Installation
 
