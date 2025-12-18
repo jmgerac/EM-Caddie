@@ -11,33 +11,25 @@ from app_context import get_segmentor
 import stages_and_ui.line_profile_ui as line_profile_ui
 
 def loading_animation():
-    # Function to embed MP4 as autoplaying, looped, muted video
-    def autoplay_video(path, width=300):
-        with open(path, "rb") as f:
-            data = f.read()
-        b64 = base64.b64encode(data).decode()
-        html = f"""
-            <video autoplay loop muted playsinline style="width:{width}px; height:auto;">
-                <source src="data:video/mp4;base64,{b64}" type="video/mp4">
-            </video>
-            """
-        return html
+    gif_url = (
+        "https://github.com/jmgerac/EM-Caddie/blob/main/assets/"
+        "video_0_to_4s_slowstart_cropped_transparent.gif?raw=true"
+    )
 
-    video_html = autoplay_video("quick_golf_miss.mp4", width=300)
-
-    # Side-by-side title and video, vertically centered
     st.markdown(
         f"""
-            <div style="display:flex; align-items:center; justify-content:center; gap:50px;">
-                <h1 style="font-size:80px; margin:0;">EM Caddie</h1>
-                {video_html}
-            </div>
-            """,
-        unsafe_allow_html=True
+        <div style="display:flex; align-items:center; justify-content:center; gap:50px;">
+            <h1 style="font-size:80px; margin:0;">EM Caddie</h1>
+            <img src="{gif_url}" width="300" />
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
+
     time.sleep(0.7)
     st.session_state.stage = 2
     st.rerun()
+
 
 
 def initial_upload():
