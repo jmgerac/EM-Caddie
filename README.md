@@ -4,7 +4,7 @@
 
 EM-Caddie is a web-based tool that brings the power of AI to microscopy researchers. Simply describe what you want to do in plain English, upload your images, and let our integrated suite of pre-trained models handle the analysis.
 
-*Developed for the [Electron Microscopy Foundation Hackathon 2024](https://kaliningroup.github.io/mic_hackathon_2/about/)*
+*Developed for the [Electron Microscopy Foundation Hackathon 2025](https://kaliningroup.github.io/mic_hackathon_2/about/)*
 
 ## What Does EM-Caddie Do?
 
