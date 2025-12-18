@@ -2,6 +2,11 @@ import cv2
 from skimage.transform import resize
 import numpy as np
 import torch
+import tempfile
+import os
+from unet_model.inference.infer import single_inference
+from utility.settings import MODEL_PARAMS
+
 
 def hex_to_bgr(hex_color):
     """
@@ -18,6 +23,9 @@ def hex_to_bgr(hex_color):
     b = int(hex_color[4:6], 16)
     # Return as BGR for OpenCV
     return (b, g, r)
+
+
+
 
 def edge_detect(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -79,6 +87,38 @@ def atomai_segment(img, segmentor):
     # Convert to uint8 0-255 for display
     pred_mask_uint8 = (pred_mask_resized * 255).clip(0, 255).astype("uint8")
     return pred_mask_uint8
+
+def grain_unet_segment(img, model=None, device=None):
+    """
+    Grain boundary inference using official single_inference pipeline.
+    Mirrors the working standalone example.
+    """
+
+    # --- write input image to temp file ---
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_in:
+        input_path = tmp_in.name
+        cv2.imwrite(input_path, img)
+
+    # --- create temp output path ---
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_out:
+        output_path = tmp_out.name
+
+    # --- run official inference ---
+    raw_pred = single_inference(
+        image_path=input_path,
+        output_path=output_path,
+        model=MODEL_PARAMS
+    )
+
+    # cleanup temp files
+    os.remove(input_path)
+    os.remove(output_path)
+
+    # --- normalize for display ---
+    raw_pred = np.squeeze(raw_pred).astype(np.float32)
+    return (raw_pred * 255).clip(0, 255).astype(np.uint8)
+
+
 
 
 

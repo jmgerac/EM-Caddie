@@ -5,3 +5,5 @@ atomai_app/data/
 **/.ipynb/**
 **/.conda/**
 **.pyc
+.idea/
+*.iml

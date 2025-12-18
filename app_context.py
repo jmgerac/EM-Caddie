@@ -4,6 +4,7 @@ from sentence_transformers import SentenceTransformer
 import tools.image_operations as imops
 import torch
 
+
 import sys
 import TEMUpSamplerNet_app.model as tem_model
 from TEMUpSamplerNet_app.model import Net
@@ -18,6 +19,12 @@ tool_aliases = {
 def resolve_tool_name(name: str) -> str:
     name = name.strip().lower()
     return tool_aliases.get(name, name)
+
+
+from unet import UNet
+
+from unet_model.inference.infer import single_inference
+from utility.settings import MODEL_PARAMS
 
 
 @st.cache_resource
@@ -45,6 +52,20 @@ def load_super_res_model(device=None):
     return net
 
 @st.cache_resource
+def load_grain_unet(device=None):
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    weights_path = r"grain_unet-master/grain_unet-master/grain_unet_pyotrch_100epoch.pth"
+    model = UNet(out_channels=1)
+    state = torch.load(weights_path, map_location=device)
+    model.load_state_dict(state)
+    model.to(device)
+    model.eval()
+
+    return model
+
+@st.cache_resource
 def set_device():
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -58,6 +79,7 @@ def prep_tools():
         "Super Resolution": ("Denoise and upsample the image to create super resolution.", lambda img: imops.super_res(img, super_res_model, device)),
         "AtomAI Segmentation": ("Identify and highlight atom centers.",
                                 lambda img: imops.atomai_segment(img, segmentor)),
+        "Grain Boundary Probability Map": ("Estimate grain boundaries as a confidence map.", lambda img: imops.grain_unet_segment(img, grain_model, device)),
         "Add Scale Bar": ("Add a scale bar to the bottom right corner of the image.", None),
     }
     tool_names = list(tools.keys())
@@ -69,7 +91,9 @@ def prep_tools():
 encoder = load_encoder()
 segmentor = load_segmentor()
 super_res_model = load_super_res_model()
+grain_model = load_grain_unet()
 device = set_device()
+
 tools, tool_names, tool_descs, tool_embs = prep_tools()
 
 def interpret_query(
