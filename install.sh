@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# EM-Caddie PoC Installation Script
+# EM-Caddie  Installation Script
 # This script sets up the conda environment for the project
 
 set -e  # Exit on error
@@ -13,11 +13,11 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Environment name
-ENV_NAME="em-caddie-poc"
+ENV_NAME="em-caddie"
 ENV_FILE="environment.yml"
 
 echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║   EM-Caddie PoC Installation Script   ║${NC}"
+echo -e "${BLUE}║   EM-Caddie Installation Script       ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
 echo ""
 
