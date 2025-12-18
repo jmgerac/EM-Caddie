@@ -24,7 +24,7 @@ Perfect for electron microscopy, atomic force microscopy, and other high-resolut
 - **Gaussian Blur**: Smooth noise while preserving important features
 - **Edge Detection**: Automatically identify boundaries and structures
 - **Invert Colors**: Quick contrast adjustments for better visualization
-- **Add Scale Bar**: Professional annotations with customizable scale markers
+- **Add Scale Bar**: Easy annotations with customizable scale markers
 
 ### Advanced Analysis
 - **AtomAI Segmentation**: Deep learning-based segmentation optimized for atomic-scale imaging
