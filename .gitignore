@@ -5,3 +5,18 @@ atomai_app/data/
 **/.ipynb/**
 **/.conda/**
 **.pyc
+
+# IDE files
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+
+# ML model weights
+*.pth
+*.pt
+*.ckpt
+
+# Third-party repos
+grain_unet-master/
