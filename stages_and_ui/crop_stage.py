@@ -223,10 +223,10 @@ def image_cropper():
     # Update the crop dimensions box in opt_col position
     if mode == "Hand crop" and hand_cropped_img is not None:
         hw, hh = hand_cropped_img.size
-        crop_dims_placeholder.info(f"**Crop Dimensions:**     \n    {hw} × {hh} px")
+        crop_dims_placeholder.info(f"**Crop Dimensions:** {hw} × {hh} px")
     elif mode == "Coordinate crop" and coord_cropped_img is not None:
         cw, ch = coord_cropped_img.size
-        crop_dims_placeholder.info(f"**Crop Dimensions:**     \n    {cw} × {ch} px")
+        crop_dims_placeholder.info(f"**Crop Dimensions:** {cw} × {ch} px")
     else:
         # Clear the placeholder if no crop is selected
         crop_dims_placeholder.empty()
