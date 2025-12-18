@@ -108,6 +108,8 @@ Once installed, follow these simple steps each time you want to use the applicat
    - "Segment the atomic structures and add a scale bar"
 4. **Analyze and export**: View results, compare before/after, and download processed images
 
+![Line Profile Tool Example GIF](https://github.com/jmgerac/EM-Caddie/blob/f058a4b383173c1a4cc36eb87ccd677df7dd4256/assets/lineprofile.gif)
+
 ### Example Workflows
 
 **Enhancing Image Quality:**
