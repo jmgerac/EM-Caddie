@@ -7,6 +7,7 @@ from app_context import create_button, basic_tool_component, display_tool_help, 
 import tools.image_operations as imops
 from PIL import Image
 from streamlit_cropper import st_cropper
+from app_context import get_segmentor
 import stages_and_ui.line_profile_ui as line_profile_ui
 
 def loading_animation():
@@ -287,7 +288,7 @@ def reset_cb():
     st.session_state.working_img = orig
 
 
-def apply_pipeline_cb(tools, scale_bar_params=None):
+def apply_pipeline_cb(tools, scale_bar_params=None, segmentation_params=None):
     if not st.session_state.pipeline:
         return
 
@@ -328,9 +329,31 @@ def apply_pipeline_cb(tools, scale_bar_params=None):
                     total_image_length=100.0,
                 )
         else:
-            tool_fn = tools[tool_name][1]
-            if tool_fn is not None:
-                img = tool_fn(img.copy())
+            if tool_name == "AtomAI Segmentation":
+                segmentor = get_segmentor()
+                prob_mask = imops.atomai_segment(img.copy(), segmentor)
+
+                # Run model once
+                prob_mask = imops.atomai_segment(img.copy(), segmentor)
+
+                # Apply UI choice
+                if segmentation_params:
+                    if segmentation_params["mode"] == "Binary threshold":
+                        _, img = cv2.threshold(
+                            prob_mask,
+                            segmentation_params["threshold"],
+                            255,
+                            cv2.THRESH_BINARY,
+                        )
+                    else:
+                        img = prob_mask
+                else:
+                    img = prob_mask
+
+            else:
+                tool_fn = tools[tool_name][1]
+                if tool_fn is not None:
+                    img = tool_fn(img.copy())
 
         # Record timeline step
         st.session_state.timeline.append(tool_name)
@@ -457,6 +480,10 @@ def workspace(tools, tool_names, tool_embs, encoder):
         # Check if scale bar is in pipeline and show input form
         scale_bar_in_pipeline = "Add Scale Bar" in pipeline
         scale_bar_params = None
+
+        # Check if atomai in pipeline
+        segmentation_in_pipeline = "AtomAI Segmentation" in pipeline
+        segmentation_params = None
         
         if scale_bar_in_pipeline:
             st.markdown("---")
@@ -642,14 +669,43 @@ def workspace(tools, tool_names, tool_embs, encoder):
                     
                     st.image(preview_rgb, caption="Preview with Scale Bar", use_container_width=True)
 
+        if segmentation_in_pipeline:
+            st.markdown("---")
+            st.markdown("### Segmentation Output")
+
+            with st.container(border=True):
+
+                seg_mode = st.radio(
+                    "Output type:",
+                    ["Probability mask", "Binary threshold"],
+                    index=0,
+                    key="seg_output_mode",
+                )
+
+                threshold = None
+                if seg_mode == "Binary threshold":
+                    threshold = st.slider(
+                        "Threshold",
+                        min_value=0,
+                        max_value=255,
+                        value=128,
+                        step=1,
+                        key="seg_threshold",
+                    )
+
+                segmentation_params = {
+                    "mode": seg_mode,
+                    "threshold": threshold,
+                }
 
         apply_clicked = create_button(
             "Apply pipeline",
             key="apply_pipeline",
             on_click=apply_pipeline_cb,
-            args=(tools,),
+            args=(tools, scale_bar_params, segmentation_params),
             disabled=not st.session_state.pipeline,
         )
+
     # -----------------------------
     # Main column: image + actions
     # -----------------------------
