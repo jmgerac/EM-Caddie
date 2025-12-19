@@ -1,5 +1,7 @@
 # EM-Caddie
+
 ![Logo GIF](https://github.com/jmgerac/EM-Caddie/blob/3be6addfb05d2fc0ccf92490bdb4b01c62faaac4/assets/good_white_background.gif)
+
 **Intelligent Microscopy Image Analysis - No Coding Required**
 
 EM-Caddie is a web-based tool that brings the power of AI to microscopy researchers. Simply describe what you want to do in plain English, upload your images, and let our integrated suite of pre-trained models handle the analysis.
