@@ -44,38 +44,22 @@ Perfect for electron microscopy, atomic force microscopy, and other high-resolut
 You'll need [Anaconda](https://www.anaconda.com/download) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) installed on your computer.
 **Note**: If you have an NVIDIA GPU, the software will automatically use it for faster processing. If not, it will work fine on your CPU (just a bit slower).
 
-### Easy Installation (Recommended)
+### Installation
 
 1. **Download this project** to your computer
-2. **Open a terminal** (Command Prompt on Windows, Terminal on Mac/Linux)
-3. **Navigate to the project folder**:
    ```bash
-   cd path/to/EM-Caddie
+   git clone https://github.com/jmge
    ```
-4. **Run the installer**:
+3. **Open a terminal** (Command Prompt on Windows, Terminal on Mac/Linux)
    ```bash
-   chmod +x install.sh
-   ./install.sh
+   # Create the environment
+   conda env create -f environment.yml
+   
+   # Activate the environment
+   conda activate em-caddie
    ```
-
-The installer will:
-- Set up everything automatically
-- Test that it's working
-- Tell you what to do next
-
 That's it! The installation takes a few minutes, so take a little break!
-
-### Alternative: Manual Installation
-
-If the automatic installer doesn't work, you can install manually:
-
-```bash
-# Create the environment
-conda env create -f environment.yml
-
-# Activate the environment
-conda activate em-caddie
-```
+On the first run, a popup will prompt you to sign in to a [Redivis](https://redivis.com/) account, in order to access some of our models.
 
 ## Running EM-Caddie
 
