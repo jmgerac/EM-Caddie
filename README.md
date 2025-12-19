@@ -6,7 +6,9 @@
 
 EM-Caddie is a web-based tool that brings the power of AI to microscopy researchers. Simply describe what you want to do in plain English, upload your images, and let our integrated suite of pre-trained models handle the analysis.
 
-*Developed for the [AI and ML for Microscopy Hackathon, 2025](https://kaliningroup.github.io/mic_hackathon_2/about/)*
+*Developed for the [Microscopy Hackathon, 2025](https://kaliningroup.github.io/mic_hackathon_2/about/)*
+**Disclaimer:** Some initial brainstorming and preliminary development, including a prototype interface, for this project occurred before the hackathon. Almost all feature addition, development, and testing ocurred during the Hackathon, Dec 16-18 2025.
+
 
 ![Example GIF](https://github.com/jmgerac/EM-Caddie/blob/da6ffbae2153c765abe58ba3bbb0e152af3eb54e/assets/video-animation.gif)
 
